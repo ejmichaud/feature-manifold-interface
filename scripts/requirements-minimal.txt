@@ -1,0 +1,16 @@
+# Minimal requirements for testing SAE loading
+# Assumes torch is already installed or will be installed separately
+
+# SAE - this pulls in torch if needed
+sae-lens>=4.0.0
+
+# Model loading
+transformers>=4.48.0
+accelerate>=0.27.0
+
+# Data
+datasets>=2.18.0
+
+# Basic utilities (small packages)
+tqdm>=4.65.0
+einops>=0.7.0
