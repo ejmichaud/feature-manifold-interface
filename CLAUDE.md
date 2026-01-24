@@ -76,26 +76,26 @@ python scripts/run_pipeline.py --config experiments/gemma3_27b_layer31_262k.yaml
 
 ### Data Organization (Multi-Experiment)
 
-Data is organized by experiment ID (`{model}_{layer}_{sae_width}_{sae_l0}`):
+Each experiment is self-contained under `data/experiments/{id}/`:
 
 ```
-data/
-├── experiments/
-│   ├── gemma-3-27b-pt_layer31_65k_medium/
-│   │   ├── raw_activations/
-│   │   ├── latents/
-│   │   ├── graph/
-│   │   ├── decoder.npy
-│   │   └── metadata.json
-│   └── gemma-3-27b-pt_layer15_65k_medium/
-│       └── ...
-└── visualizer_data/
-    ├── gemma-3-27b-pt_layer31_65k_medium/
-    │   ├── index.json
-    │   ├── positions.json
-    │   └── latents/
+data/experiments/
+├── gemma-3-27b-pt_layer31_65k_medium/
+│   ├── raw_activations/       # Harvest output (shards, decoder, metadata)
+│   ├── latents/               # Per-latent indices
+│   ├── graph/                 # UMAP positions, similarity edges
+│   ├── corpus/                # Token position map
+│   ├── decoder.npy
+│   ├── metadata.json
+│   └── visualizer/            # Web visualizer data
+│       ├── index.json
+│       ├── positions.json
+│       └── latents/
+└── gemma-3-27b-pt_layer16_65k_medium/
     └── ...
 ```
+
+The experiment ID is `{model}_{layer}_{sae_width}_{sae_l0}`.
 
 ### Manual Pipeline Steps
 
@@ -220,8 +220,10 @@ Click latents on 2D projection:
 
 ## Data Format
 
+Each experiment directory contains:
+
 ```
-data/
+experiments/{experiment_id}/
 ├── raw_activations/            # Harvest output
 │   ├── shard_*.npz            # {token_indices, latent_indices, activations, token_ids, doc_ids, positions}
 │   ├── decoder.npy            # (n_latents, d_model)
@@ -235,14 +237,15 @@ data/
 │   ├── jaccard_similarity.npz # Sparse Jaccard similarity
 │   ├── coactivation.npz       # Sparse co-activation counts
 │   └── metadata.json
-├── decoder.npy
-└── metadata.json
-
-visualizer/data/                # Visualizer data
-├── index.json                 # Latent metadata
-├── positions.json             # UMAP positions for web
-└── latents/
-    └── *.json                 # Per-latent examples
+├── corpus/
+│   └── token_map.npy          # (n_tokens, 2) -> [doc_id, position]
+├── decoder.npy                 # Copied from raw_activations
+├── metadata.json               # Updated with index stats
+└── visualizer/                 # Web visualizer data
+    ├── index.json             # Latent metadata
+    ├── positions.json         # UMAP positions for web
+    └── latents/
+        └── *.json             # Per-latent examples
 ```
 
 ## Planned: Full Graph Interface

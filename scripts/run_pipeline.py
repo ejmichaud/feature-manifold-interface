@@ -53,9 +53,22 @@ def get_experiment_id(model: str, layer: int, sae_width: str, sae_l0: str) -> st
 
 
 def setup_directories(data_root: Path, experiment_id: str) -> dict:
-    """Create directory structure for an experiment."""
+    """Create directory structure for an experiment.
+
+    All data for one experiment lives under a single directory:
+        data/experiments/{id}/
+        ├── raw_activations/
+        ├── latents/
+        ├── graph/
+        ├── corpus/
+        ├── decoder.npy
+        ├── metadata.json
+        └── visualizer/
+            ├── index.json
+            ├── positions.json
+            └── latents/
+    """
     exp_dir = data_root / "experiments" / experiment_id
-    vis_dir = data_root / "visualizer_data" / experiment_id
 
     dirs = {
         "experiment": exp_dir,
@@ -63,8 +76,8 @@ def setup_directories(data_root: Path, experiment_id: str) -> dict:
         "latents": exp_dir / "latents",
         "graph": exp_dir / "graph",
         "corpus": exp_dir / "corpus",
-        "visualizer": vis_dir,
-        "visualizer_latents": vis_dir / "latents",
+        "visualizer": exp_dir / "visualizer",
+        "visualizer_latents": exp_dir / "visualizer" / "latents",
     }
 
     for name, path in dirs.items():
@@ -146,7 +159,6 @@ def run_pipeline(
     # Setup directories
     dirs = setup_directories(data_root, experiment_id)
     print(f"\nExperiment directory: {dirs['experiment']}")
-    print(f"Visualizer directory: {dirs['visualizer']}")
 
     scripts_dir = Path(__file__).parent
 
@@ -281,12 +293,15 @@ def run_pipeline(
     else:
         print(f"# Pipeline completed with errors")
     print(f"{'#' * 60}")
-    print(f"\nExperiment data: {dirs['experiment']}")
-    print(f"Visualizer data: {dirs['visualizer']}")
+    print(f"\nExperiment directory: {dirs['experiment']}")
+    print(f"  ├── raw_activations/")
+    print(f"  ├── latents/")
+    print(f"  ├── graph/")
+    print(f"  └── visualizer/")
     print(f"\nTo serve the visualizer:")
     print(f"  cd {data_root.parent}/visualizer")
-    print(f"  # Update DATA_DIR in index.html to point to:")
-    print(f"  #   ../data/visualizer_data/{experiment_id}")
+    print(f"  # Update DATA_DIR in umap.html to point to:")
+    print(f"  #   ../data/experiments/{experiment_id}/visualizer")
     print(f"  python -m http.server 8080")
 
     return all_success
