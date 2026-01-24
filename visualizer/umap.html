@@ -77,6 +77,27 @@
             color: #ff4500;
         }
 
+        .experiment-select {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 11px;
+            background: white;
+            color: #333;
+            max-width: 280px;
+            cursor: pointer;
+        }
+
+        .experiment-select:hover {
+            border-color: #ff4500;
+        }
+
+        .experiment-select:focus {
+            outline: none;
+            border-color: #ff4500;
+        }
+
         .umap-canvas-container {
             flex: 1;
             position: relative;
@@ -414,6 +435,9 @@
         <div class="umap-panel">
             <div class="umap-header">
                 <span class="umap-title">UMAP Projection</span>
+                <select class="experiment-select" id="experiment-select" onchange="switchExperiment(this.value)">
+                    <option value="">Loading experiments...</option>
+                </select>
                 <span class="umap-stats" id="umap-stats">Loading...</span>
                 <div class="umap-controls">
                     <button class="umap-btn" onclick="resetView()">Reset View</button>
@@ -460,9 +484,13 @@
 
     <script>
         // Configuration
-        const DATA_DIR = '../data/latent_examples';
+        const EXPERIMENTS_ROOT = '../data/experiments';
+        const MANIFEST_URL = '../data/experiments.json';
+        let DATA_DIR = null;  // Set when experiment is selected
 
         // State
+        let experiments = [];
+        let currentExperiment = null;
         let positions = null;
         let indexData = null;
         let currentLatent = null;
@@ -500,6 +528,79 @@
             resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
 
+            // Load experiments manifest
+            await loadExperiments();
+        }
+
+        async function loadExperiments() {
+            const select = document.getElementById('experiment-select');
+
+            try {
+                const response = await fetch(MANIFEST_URL);
+                if (!response.ok) throw new Error('No experiments manifest found');
+
+                const manifest = await response.json();
+                experiments = manifest.experiments.filter(e => e.has_visualizer);
+
+                if (experiments.length === 0) {
+                    select.innerHTML = '<option value="">No experiments with visualizer data</option>';
+                    return;
+                }
+
+                // Populate dropdown
+                select.innerHTML = experiments.map(exp => {
+                    const label = `Layer ${exp.layer} / ${exp.sae_width} / ${exp.sae_l0}`;
+                    const tokens = exp.num_tokens ? ` (${(exp.num_tokens/1e6).toFixed(0)}M tokens)` : '';
+                    return `<option value="${exp.id}">${label}${tokens}</option>`;
+                }).join('');
+
+                // Check URL for experiment parameter
+                const urlParams = new URLSearchParams(window.location.search);
+                const expParam = urlParams.get('exp');
+                const defaultExp = expParam && experiments.find(e => e.id === expParam)
+                    ? expParam
+                    : experiments[0].id;
+
+                select.value = defaultExp;
+                await switchExperiment(defaultExp);
+
+            } catch (error) {
+                console.error('Failed to load experiments:', error);
+                select.innerHTML = '<option value="">Error loading experiments</option>';
+
+                // Fallback: try loading from legacy path
+                DATA_DIR = '../data/latent_examples';
+                await loadExperimentData();
+            }
+        }
+
+        async function switchExperiment(experimentId) {
+            if (!experimentId) return;
+
+            currentExperiment = experiments.find(e => e.id === experimentId);
+            DATA_DIR = `${EXPERIMENTS_ROOT}/${experimentId}/visualizer`;
+
+            // Update URL without reload
+            const url = new URL(window.location);
+            url.searchParams.set('exp', experimentId);
+            window.history.replaceState({}, '', url);
+
+            // Clear current state
+            positions = null;
+            indexData = null;
+            currentLatent = null;
+            currentLatentData = null;
+            latentCache.clear();
+
+            // Reset UI
+            document.getElementById('umap-stats').textContent = 'Loading...';
+            document.getElementById('examples-container').innerHTML =
+                '<div class="placeholder">Loading experiment data...</div>';
+
+            await loadExperimentData();
+        }
+
+        async function loadExperimentData() {
             try {
                 // Load data in parallel
                 const [posData, idxData] = await Promise.all([
@@ -519,14 +620,17 @@
                 computeBounds();
                 resetView();
 
+                // Reset examples panel
+                document.getElementById('examples-container').innerHTML =
+                    '<div class="placeholder">Click a point on the UMAP to view its examples</div>';
+
             } catch (error) {
                 document.getElementById('umap-stats').textContent = 'Error loading data';
                 document.getElementById('examples-container').innerHTML =
                     `<div class="error">
                         <strong>Error:</strong> ${error.message}<br><br>
-                        Make sure you've run:<br>
-                        <code>python scripts/export_umap_json.py</code><br>
-                        <code>python scripts/extract_top_activations.py</code>
+                        Make sure you've run the pipeline:<br>
+                        <code>python scripts/run_pipeline.py --config experiments/...</code>
                     </div>`;
             }
         }

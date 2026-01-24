@@ -286,6 +286,16 @@ def run_pipeline(
         )
         all_success = all_success and success
 
+    # Update experiments manifest
+    run_command(
+        [
+            sys.executable, scripts_dir / "update_experiments_manifest.py",
+            "--data-root", str(data_root),
+        ],
+        "Update experiments manifest",
+        dry_run=dry_run,
+    )
+
     # Summary
     print(f"\n{'#' * 60}")
     if all_success:

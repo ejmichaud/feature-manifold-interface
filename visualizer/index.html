@@ -395,10 +395,35 @@
         .section-header.high .section-title { color: #ff8c00; }
         .section-header.medium .section-title { color: #b8860b; }
         .section-header.low .section-title { color: #228b22; }
+
+        .experiment-select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 12px;
+            background: white;
+            color: #333;
+            max-width: 300px;
+            cursor: pointer;
+        }
+
+        .experiment-select:hover {
+            border-color: #ff4500;
+        }
+
+        .experiment-select:focus {
+            outline: none;
+            border-color: #ff4500;
+        }
     </style>
 </head>
 <body>
     <div class="header">
+        <select class="experiment-select" id="experiment-select" onchange="switchExperiment(this.value)">
+            <option value="">Loading experiments...</option>
+        </select>
+
         <div class="nav-controls">
             <button class="nav-btn" onclick="prevLatent()" title="Previous (←)">‹</button>
             <input type="number" class="latent-input" id="latent-input" value="0" min="0">
@@ -435,9 +460,13 @@
 
     <script>
         // Configuration
-        const DATA_DIR = '../data/latent_examples';  // Directory containing index.json and latents/
+        const EXPERIMENTS_ROOT = '../data/experiments';
+        const MANIFEST_URL = '../data/experiments.json';
+        let DATA_DIR = null;  // Set when experiment is selected
 
         // State
+        let experiments = [];
+        let currentExperiment = null;
         let indexData = null;
         let currentLatent = 0;
         let maxLatent = 0;
@@ -453,6 +482,70 @@
             { key: 'medium', title: 'Medium Activations', range: '40-70%' },
             { key: 'low', title: 'Low Activations', range: '10-40%' },
         ];
+
+        async function loadExperiments() {
+            const select = document.getElementById('experiment-select');
+
+            try {
+                const response = await fetch(MANIFEST_URL);
+                if (!response.ok) throw new Error('No experiments manifest found');
+
+                const manifest = await response.json();
+                experiments = manifest.experiments.filter(e => e.has_visualizer);
+
+                if (experiments.length === 0) {
+                    select.innerHTML = '<option value="">No experiments with visualizer data</option>';
+                    return;
+                }
+
+                // Populate dropdown
+                select.innerHTML = experiments.map(exp => {
+                    const label = `Layer ${exp.layer} / ${exp.sae_width} / ${exp.sae_l0}`;
+                    const tokens = exp.num_tokens ? ` (${(exp.num_tokens/1e6).toFixed(0)}M tokens)` : '';
+                    return `<option value="${exp.id}">${label}${tokens}</option>`;
+                }).join('');
+
+                // Check URL for experiment parameter
+                const urlParams = new URLSearchParams(window.location.search);
+                const expParam = urlParams.get('exp');
+                const defaultExp = expParam && experiments.find(e => e.id === expParam)
+                    ? expParam
+                    : experiments[0].id;
+
+                select.value = defaultExp;
+                await switchExperiment(defaultExp);
+
+            } catch (error) {
+                console.error('Failed to load experiments:', error);
+                select.innerHTML = '<option value="">Error loading experiments</option>';
+
+                // Fallback: try loading from legacy path
+                DATA_DIR = '../data/latent_examples';
+                await loadIndex();
+            }
+        }
+
+        async function switchExperiment(experimentId) {
+            if (!experimentId) return;
+
+            currentExperiment = experiments.find(e => e.id === experimentId);
+            DATA_DIR = `${EXPERIMENTS_ROOT}/${experimentId}/visualizer`;
+
+            // Update URL without reload
+            const url = new URL(window.location);
+            url.searchParams.set('exp', experimentId);
+            window.history.replaceState({}, '', url);
+
+            // Clear current state
+            indexData = null;
+            currentLatent = 0;
+            latentCache.clear();
+
+            // Reset UI
+            document.getElementById('content').innerHTML = '<div class="loading">Loading experiment...</div>';
+
+            await loadIndex();
+        }
 
         async function loadIndex() {
             try {
@@ -470,7 +563,7 @@
                 document.getElementById('content').innerHTML =
                     `<div class="error">
                         <strong>Error loading index:</strong> ${error.message}<br><br>
-                        Run <code>python scripts/extract_top_activations.py --output-dir visualizer/data</code> first.
+                        Run the pipeline: <code>python scripts/run_pipeline.py --config experiments/...</code>
                     </div>`;
             }
         }
@@ -848,8 +941,8 @@
         // Histogram click to toggle log scale
         document.getElementById('histogram-container').addEventListener('click', toggleLogScale);
 
-        // Load index on page load
-        loadIndex();
+        // Load experiments on page load
+        loadExperiments();
     </script>
 </body>
 </html>
