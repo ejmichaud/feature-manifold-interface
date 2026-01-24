@@ -25,21 +25,89 @@ Output:
 
 Usage:
     python build_indices.py --input-dir ../data/raw_activations \
-                            --output-dir ../data
+                            --output-dir ../data \
+                            --n-workers 8
 """
 
 import argparse
 import json
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
 
 
-def load_shards(input_dir: Path) -> tuple[dict, dict]:
+def load_single_shard(shard_path: Path) -> tuple[list, dict]:
     """
-    Load all shards and aggregate by latent.
+    Load a single shard and return its data.
+
+    Returns:
+        tuple of (latent_entries, token_entries) where:
+        - latent_entries: list of (latent_idx, token_idx, activation)
+        - token_entries: dict of token_idx -> (doc_id, position)
+    """
+    shard = np.load(shard_path)
+
+    token_indices = shard["token_indices"]
+    latent_indices = shard["latent_indices"]
+    activations = shard["activations"]
+    doc_ids = shard["doc_ids"]
+    positions = shard["positions"]
+
+    # Build latent entries as numpy arrays for efficiency
+    latent_entries = np.column_stack([
+        latent_indices.astype(np.int32),
+        token_indices.astype(np.int64),
+        activations.astype(np.float32),
+    ])
+
+    # Build token entries (only unique token_idx needed)
+    token_entries = {}
+    for tok_idx, doc_id, pos in zip(token_indices, doc_ids, positions):
+        tok_idx = int(tok_idx)
+        if tok_idx not in token_entries:
+            token_entries[tok_idx] = (int(doc_id), int(pos))
+
+    return latent_entries, token_entries
+
+
+def load_shards_parallel(input_dir: Path, n_workers: int = 8) -> tuple[dict, dict]:
+    """
+    Load all shards in parallel and aggregate by latent.
+
+    Returns:
+        latent_data: dict[latent_id] -> list[(token_idx, activation)]
+        token_data: dict[token_idx] -> (doc_id, position)
+    """
+    shard_files = sorted(input_dir.glob("shard_*.npz"))
+    print(f"Found {len(shard_files)} shards, loading with {n_workers} workers...")
+
+    latent_data = defaultdict(list)
+    token_data = {}
+
+    # Load shards in parallel
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        futures = {executor.submit(load_single_shard, path): path for path in shard_files}
+
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Loading shards"):
+            latent_entries, token_entries = future.result()
+
+            # Aggregate latent data
+            for lat_idx, tok_idx, act in latent_entries:
+                latent_data[int(lat_idx)].append((int(tok_idx), float(act)))
+
+            # Merge token data
+            token_data.update(token_entries)
+
+    print(f"Loaded {len(latent_data)} unique latents, {len(token_data)} unique tokens")
+    return latent_data, token_data
+
+
+def load_shards_sequential(input_dir: Path) -> tuple[dict, dict]:
+    """
+    Load all shards sequentially (fallback for single-worker mode).
 
     Returns:
         latent_data: dict[latent_id] -> list[(token_idx, activation)]
@@ -69,7 +137,6 @@ def load_shards(input_dir: Path) -> tuple[dict, dict]:
 
             latent_data[lat_idx].append((tok_idx, act))
 
-            # Store token context info (may be duplicated but that's fine)
             if tok_idx not in token_data:
                 token_data[tok_idx] = (doc_id, pos)
 
@@ -150,6 +217,8 @@ def main():
     parser = argparse.ArgumentParser(description="Build per-latent indices")
     parser.add_argument("--input-dir", type=str, required=True, help="Raw activations directory")
     parser.add_argument("--output-dir", type=str, required=True, help="Output directory")
+    parser.add_argument("--n-workers", type=int, default=8,
+                        help="Number of parallel workers for loading shards (default: 8)")
 
     args = parser.parse_args()
     input_dir = Path(args.input_dir)
@@ -166,8 +235,12 @@ def main():
     print(f"Processing activations for {metadata['n_latents']} latents")
     print(f"From {metadata['num_tokens']} tokens across {metadata['num_shards']} shards")
 
-    # Load all shards
-    latent_data, token_data = load_shards(input_dir)
+    # Load all shards (parallel or sequential)
+    if args.n_workers > 1:
+        latent_data, token_data = load_shards_parallel(input_dir, n_workers=args.n_workers)
+    else:
+        latent_data, token_data = load_shards_sequential(input_dir)
+
     print(f"Loaded activations for {len(latent_data)} unique latents")
     print(f"Covering {len(token_data)} unique tokens")
 

@@ -10,25 +10,29 @@ This script:
 
 Usage:
     python harvest_activations.py \
-        --layer 12 \
-        --sae-width 16k \
-        --sae-l0 small \
-        --output-dir ../data/raw_activations \
-        --num-tokens 1000000
+        --layer 31 \
+        --sae-width 65k \
+        --sae-l0 medium \
+        --output-dir /remote/ericjm/feature-manifold-interface/data/raw_activations \
+        --num-tokens 10000000
 
     Available SAE configs (layer_X_width_Y_l0_Z):
         widths: 16k, 65k, 262k, 1m
-        l0: small, big (controls sparsity)
+        l0: small, medium, big (controls sparsity)
 
 The output format is sharded files containing:
     - token_indices: global token index for each activation
     - latent_indices: which latent fired
     - activations: the activation value
+    - token_ids: vocabulary index of the token
     - contexts: (doc_id, position) for context lookup
+
+Also generates latent_labels.json with the most common token for each latent.
 """
 
 import argparse
 import json
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -50,14 +54,14 @@ from sae_lens import SAE
 class HarvestConfig:
     """Configuration for activation harvesting."""
     model_name: str = "google/gemma-3-27b-pt"
-    sae_release: str = "gemma-scope-2-27b-pt-resid_post"
-    layer: int = 12
-    sae_width: str = "16k"
-    sae_l0: str = "small"
+    sae_release: str = "gemma-scope-2-27b-pt-res"
+    layer: int = 31
+    sae_width: str = "65k"
+    sae_l0: str = "medium"
     output_dir: Path = None
-    num_tokens: int = 1_000_000
+    num_tokens: int = 10_000_000
     batch_size: int = 2  # Smaller for 27B model
-    seq_len: int = 512
+    seq_len: int = 1024  # Match Gemma Scope 2 eval context
     shard_size: int = 1_000_000  # activations per shard file
     activation_threshold: float = 0.0  # only store activations above this
     device: str = "cuda"
@@ -91,10 +95,15 @@ class ActivationHarvester:
 
         # Load model
         print(f"Loading model {config.model_name}...")
+        # Use specific device if provided (e.g., cuda:5), otherwise use auto
+        if config.device.startswith("cuda:"):
+            device_map = {"": config.device}
+        else:
+            device_map = "auto"
         self.model = Gemma3ForConditionalGeneration.from_pretrained(
             config.model_name,
             torch_dtype=config.dtype,
-            device_map="auto",
+            device_map=device_map,
         )
         self.model.eval()
 
@@ -122,16 +131,25 @@ class ActivationHarvester:
         # Register hook at the correct location
         self._register_hook()
 
+        # Get special token IDs to skip (BOS, EOS, PAD, etc.)
+        self.special_token_ids = set(self.tokenizer.all_special_ids)
+        print(f"Will skip {len(self.special_token_ids)} special tokens: {self.special_token_ids}")
+
         # Shard tracking
         self.current_shard = 0
         self.shard_data = {
             "token_indices": [],
             "latent_indices": [],
             "activations": [],
+            "token_ids": [],
             "doc_ids": [],
             "positions": [],
         }
         self.activations_in_shard = 0
+
+        # Track token counts per latent for computing labels
+        # latent_id -> Counter[token_id] -> count
+        self.latent_token_counts: dict[int, Counter] = defaultdict(Counter)
 
     def _register_hook(self):
         """
@@ -212,6 +230,12 @@ class ActivationHarvester:
                 if attention_mask[batch_idx, pos] == 0:
                     continue
 
+                token_id = input_ids[batch_idx, pos].item()
+
+                # Skip special tokens (BOS, EOS, PAD, etc.)
+                if token_id in self.special_token_ids:
+                    continue
+
                 global_token_idx = global_token_offset + tokens_processed
 
                 # Get non-zero latent activations
@@ -221,13 +245,18 @@ class ActivationHarvester:
 
                 # Store each non-zero activation
                 for latent_idx in nonzero_indices:
+                    latent_idx_int = latent_idx.item()
                     act_value = acts[latent_idx].item()
 
                     self.shard_data["token_indices"].append(global_token_idx)
-                    self.shard_data["latent_indices"].append(latent_idx.item())
+                    self.shard_data["latent_indices"].append(latent_idx_int)
                     self.shard_data["activations"].append(act_value)
+                    self.shard_data["token_ids"].append(token_id)
                     self.shard_data["doc_ids"].append(doc_ids[batch_idx])
                     self.shard_data["positions"].append(pos)
+
+                    # Track token counts for this latent (for labels)
+                    self.latent_token_counts[latent_idx_int][token_id] += 1
 
                     self.activations_in_shard += 1
 
@@ -251,6 +280,7 @@ class ActivationHarvester:
             token_indices=np.array(self.shard_data["token_indices"], dtype=np.int64),
             latent_indices=np.array(self.shard_data["latent_indices"], dtype=np.int32),
             activations=np.array(self.shard_data["activations"], dtype=np.float16),
+            token_ids=np.array(self.shard_data["token_ids"], dtype=np.int32),
             doc_ids=np.array(self.shard_data["doc_ids"], dtype=np.int32),
             positions=np.array(self.shard_data["positions"], dtype=np.int16),
         )
@@ -271,6 +301,60 @@ class ActivationHarvester:
         decoder = self.sae.W_dec.detach().cpu().float().numpy()
         np.save(decoder_path, decoder)
         print(f"Saved decoder matrix: shape {decoder.shape}")
+
+    def _save_latent_labels(self):
+        """
+        Compute and save labels for each latent.
+
+        For each latent, the label is the most frequently occurring token
+        (mode of the token distribution when that latent fires).
+        """
+        labels_path = self.config.output_dir / "latent_labels.json"
+
+        print("Computing latent labels (most frequent token per latent)...")
+        labels = {}
+
+        for latent_id in tqdm(range(self.sae.cfg.d_sae), desc="Computing labels"):
+            if latent_id in self.latent_token_counts:
+                token_counter = self.latent_token_counts[latent_id]
+
+                if token_counter:
+                    # Get most common token
+                    most_common_token_id, count = token_counter.most_common(1)[0]
+
+                    # Decode token to text
+                    token_text = self.tokenizer.decode([most_common_token_id])
+
+                    labels[str(latent_id)] = {
+                        "token": token_text,
+                        "token_id": int(most_common_token_id),
+                        "count": int(count),
+                        "total_firings": sum(token_counter.values()),
+                    }
+                else:
+                    # No activations for this latent
+                    labels[str(latent_id)] = {
+                        "token": None,
+                        "token_id": None,
+                        "count": 0,
+                        "total_firings": 0,
+                    }
+            else:
+                # Latent never fired
+                labels[str(latent_id)] = {
+                    "token": None,
+                    "token_id": None,
+                    "count": 0,
+                    "total_firings": 0,
+                }
+
+        with open(labels_path, "w") as f:
+            json.dump(labels, f, indent=2)
+
+        # Print some stats
+        active_latents = sum(1 for l in labels.values() if l["total_firings"] > 0)
+        print(f"Saved latent labels to {labels_path}")
+        print(f"  {active_latents}/{len(labels)} latents had at least one activation")
 
     def harvest(self):
         """Main harvesting loop."""
@@ -321,6 +405,9 @@ class ActivationHarvester:
             # Save decoder matrix for later reconstruction
             self._save_decoder()
 
+            # Compute and save latent labels
+            self._save_latent_labels()
+
             # Save metadata
             metadata = {
                 "model_name": self.config.model_name,
@@ -350,17 +437,20 @@ class ActivationHarvester:
 
 def main():
     parser = argparse.ArgumentParser(description="Harvest SAE activations from Gemma 3 27B")
-    parser.add_argument("--layer", type=int, required=True, help="Layer to capture (e.g., 12)")
-    parser.add_argument("--sae-width", type=str, default="16k",
+    parser.add_argument("--layer", type=int, default=31, help="Layer to capture (default: 31)")
+    parser.add_argument("--sae-width", type=str, default="65k",
                         choices=["16k", "65k", "262k", "1m"],
-                        help="SAE width")
-    parser.add_argument("--sae-l0", type=str, default="small",
-                        choices=["small", "big"],
-                        help="SAE L0 variant (controls sparsity)")
-    parser.add_argument("--output-dir", type=str, required=True, help="Output directory")
-    parser.add_argument("--num-tokens", type=int, default=1_000_000, help="Tokens to process")
+                        help="SAE width (default: 65k)")
+    parser.add_argument("--sae-l0", type=str, default="medium",
+                        choices=["small", "medium", "big"],
+                        help="SAE L0 variant (controls sparsity, default: medium)")
+    parser.add_argument("--output-dir", type=str,
+                        default="/remote/ericjm/feature-manifold-interface/data/raw_activations",
+                        help="Output directory")
+    parser.add_argument("--num-tokens", type=int, default=10_000_000, help="Tokens to process (default: 10M)")
     parser.add_argument("--batch-size", type=int, default=2, help="Batch size (smaller for 27B)")
-    parser.add_argument("--seq-len", type=int, default=512, help="Sequence length")
+    parser.add_argument("--seq-len", type=int, default=1024, help="Sequence length (default: 1024, matches Gemma Scope 2 evals)")
+    parser.add_argument("--device", type=str, default="cuda", help="Device for SAE and tensors (e.g., cuda:5)")
 
     args = parser.parse_args()
 
@@ -372,6 +462,7 @@ def main():
         num_tokens=args.num_tokens,
         batch_size=args.batch_size,
         seq_len=args.seq_len,
+        device=args.device,
     )
 
     print(f"Configuration:")

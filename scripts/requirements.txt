@@ -7,6 +7,7 @@ accelerate>=0.27.0
 datasets>=2.18.0
 numpy>=1.24.0
 scipy>=1.10.0
+zstandard>=0.22.0  # Required for datasets decompression
 
 # SAE - use SAELens for Gemma Scope 2
 sae-lens>=4.0.0

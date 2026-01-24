@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAE Latent Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+            background: #fafafa;
+            color: #1a1a1a;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        /* Header */
+        .header {
+            position: sticky;
+            top: 0;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 12px 20px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-btn {
+            width: 32px;
+            height: 32px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .nav-btn:hover {
+            border-color: #ff4500;
+            color: #ff4500;
+        }
+
+        .nav-btn:active {
+            background: #fff5f0;
+        }
+
+        .latent-input {
+            width: 80px;
+            height: 32px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 0 8px;
+            font-family: inherit;
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .latent-input:focus {
+            outline: none;
+            border-color: #ff4500;
+        }
+
+        .latent-range {
+            color: #999;
+            font-size: 11px;
+        }
+
+        /* Latent Info */
+        .latent-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 1;
+        }
+
+        .latent-id {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .latent-label {
+            background: #ff4500;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .latent-stats {
+            color: #666;
+            font-size: 11px;
+        }
+
+        /* Histogram */
+        .histogram-container {
+            width: 200px;
+            height: 40px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .histogram-container:hover::after {
+            content: 'Click for log scale';
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            font-size: 8px;
+            color: #999;
+        }
+
+        .histogram-container.log-scale:hover::after {
+            content: 'Click for linear';
+        }
+
+        .histogram-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Main content */
+        .main {
+            padding: 16px 20px;
+        }
+
+        /* Examples grid */
+        .examples-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 8px;
+        }
+
+        .example {
+            background: white;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            padding: 10px 12px;
+            position: relative;
+            transition: border-color 0.15s;
+        }
+
+        .example:hover {
+            border-color: #ccc;
+        }
+
+        .example-rank {
+            position: absolute;
+            top: 6px;
+            right: 8px;
+            font-size: 10px;
+            color: #bbb;
+        }
+
+        .example-activation {
+            position: absolute;
+            top: 6px;
+            right: 30px;
+            font-size: 10px;
+            color: #ff4500;
+            font-weight: 600;
+        }
+
+        .example-firings {
+            position: absolute;
+            top: 6px;
+            right: 70px;
+            font-size: 10px;
+            color: #999;
+        }
+
+        .example-context {
+            font-size: 13px;
+            line-height: 1.7;
+            word-wrap: break-word;
+            padding-right: 80px;
+        }
+
+        /* Token highlighting */
+        .token {
+            display: inline;
+            border-radius: 2px;
+            transition: background 0.1s;
+        }
+
+        .token.highlighted {
+            padding: 1px 0;
+        }
+
+        /* Activation intensity classes */
+        .act-1 { background: rgba(255, 69, 0, 0.08); }
+        .act-2 { background: rgba(255, 69, 0, 0.15); }
+        .act-3 { background: rgba(255, 69, 0, 0.25); }
+        .act-4 { background: rgba(255, 69, 0, 0.35); }
+        .act-5 { background: rgba(255, 69, 0, 0.50); }
+        .act-6 { background: rgba(255, 69, 0, 0.65); }
+        .act-7 { background: rgba(255, 69, 0, 0.80); color: white; }
+        .act-8 { background: rgba(255, 69, 0, 0.90); color: white; }
+        .act-9 { background: rgba(255, 69, 0, 1.0); color: white; }
+
+        /* Loading & Error states */
+        .loading, .error {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+
+        .error {
+            color: #cc0000;
+            background: #fff0f0;
+            border-radius: 8px;
+            margin: 20px;
+        }
+
+        /* Keyboard hints */
+        .keyboard-hints {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .key {
+            display: inline-block;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-size: 10px;
+            margin: 0 2px;
+        }
+
+        /* Tooltip for token activation values */
+        .token[title] {
+            cursor: default;
+        }
+
+        /* Compact mode toggle */
+        .view-toggle {
+            display: flex;
+            gap: 4px;
+        }
+
+        .view-btn {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            color: #666;
+        }
+
+        .view-btn.active {
+            background: #ff4500;
+            border-color: #ff4500;
+            color: white;
+        }
+
+        /* Ultra-compact list view */
+        .examples-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .examples-list .example {
+            padding: 6px 10px;
+            border-radius: 4px;
+        }
+
+        .examples-list .example-context {
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .examples-list .example-rank {
+            top: 4px;
+        }
+
+        .examples-list .example-activation {
+            top: 4px;
+        }
+
+        .examples-list .example-firings {
+            top: 4px;
+        }
+
+        /* Summary stats bar */
+        .summary-bar {
+            display: flex;
+            gap: 20px;
+            padding: 8px 0;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 11px;
+            color: #666;
+        }
+
+        .stat-item {
+            display: flex;
+            gap: 4px;
+        }
+
+        .stat-label {
+            color: #999;
+        }
+
+        .stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        /* Loading indicator */
+        .loading-indicator {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ddd;
+            border-top-color: #ff4500;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Section headers for percentile groups */
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 24px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .section-header:first-child {
+            margin-top: 0;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .section-range {
+            font-size: 11px;
+            color: #888;
+            padding: 2px 8px;
+            background: #f0f0f0;
+            border-radius: 10px;
+        }
+
+        .section-count {
+            font-size: 11px;
+            color: #999;
+        }
+
+        /* Section colors */
+        .section-header.top { border-bottom-color: #ff4500; }
+        .section-header.high { border-bottom-color: #ff8c00; }
+        .section-header.medium { border-bottom-color: #ffd700; }
+        .section-header.low { border-bottom-color: #90ee90; }
+
+        .section-header.top .section-title { color: #ff4500; }
+        .section-header.high .section-title { color: #ff8c00; }
+        .section-header.medium .section-title { color: #b8860b; }
+        .section-header.low .section-title { color: #228b22; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="nav-controls">
+            <button class="nav-btn" onclick="prevLatent()" title="Previous (←)">‹</button>
+            <input type="number" class="latent-input" id="latent-input" value="0" min="0">
+            <button class="nav-btn" onclick="nextLatent()" title="Next (→)">›</button>
+            <span class="latent-range" id="latent-range"></span>
+            <span class="loading-indicator" id="loading-indicator" style="display: none;"></span>
+        </div>
+
+        <div class="latent-info" id="latent-info">
+            <span class="latent-id" id="latent-id">Latent 0</span>
+            <span class="latent-label" id="latent-label"></span>
+            <span class="latent-stats" id="latent-stats"></span>
+        </div>
+
+        <div class="histogram-container" id="histogram-container" title="Click to toggle log scale">
+            <canvas class="histogram-canvas" id="histogram"></canvas>
+        </div>
+
+        <div class="view-toggle">
+            <button class="view-btn" id="grid-btn" onclick="setView('grid')">Grid</button>
+            <button class="view-btn active" id="list-btn" onclick="setView('list')">List</button>
+        </div>
+
+        <div class="keyboard-hints">
+            <span class="key">←</span><span class="key">→</span> navigate
+            <span class="key">g</span> go to
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="summary-bar" id="summary-bar"></div>
+        <div id="content" class="examples-list"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const DATA_DIR = '../data/latent_examples';  // Directory containing index.json and latents/
+
+        // State
+        let indexData = null;
+        let currentLatent = 0;
+        let maxLatent = 0;
+        let currentView = 'list';
+        let latentCache = new Map();  // Cache for loaded latent data
+        const CACHE_SIZE = 50;  // Max latents to keep in cache
+        let useLogScale = false;
+
+        // Percentile section config
+        const SECTIONS = [
+            { key: 'top', title: 'Top Activations', range: '90-100%' },
+            { key: 'high', title: 'High Activations', range: '70-90%' },
+            { key: 'medium', title: 'Medium Activations', range: '40-70%' },
+            { key: 'low', title: 'Low Activations', range: '10-40%' },
+        ];
+
+        async function loadIndex() {
+            try {
+                const response = await fetch(`${DATA_DIR}/index.json`);
+                if (!response.ok) throw new Error('Failed to load index');
+                indexData = await response.json();
+
+                maxLatent = indexData.n_latents - 1;
+                document.getElementById('latent-range').textContent = `/ ${maxLatent.toLocaleString()}`;
+                document.getElementById('latent-input').max = maxLatent;
+
+                // Load first latent
+                loadLatent(0);
+            } catch (error) {
+                document.getElementById('content').innerHTML =
+                    `<div class="error">
+                        <strong>Error loading index:</strong> ${error.message}<br><br>
+                        Run <code>python scripts/extract_top_activations.py --output-dir visualizer/data</code> first.
+                    </div>`;
+            }
+        }
+
+        async function loadLatentData(latentId) {
+            // Check cache first
+            if (latentCache.has(latentId)) {
+                return latentCache.get(latentId);
+            }
+
+            // Fetch from server
+            const paddedId = String(latentId).padStart(5, '0');
+            const response = await fetch(`${DATA_DIR}/latents/${paddedId}.json`);
+            if (!response.ok) {
+                throw new Error(`Failed to load latent ${latentId}`);
+            }
+
+            const data = await response.json();
+
+            // Add to cache
+            if (latentCache.size >= CACHE_SIZE) {
+                // Remove oldest entry
+                const firstKey = latentCache.keys().next().value;
+                latentCache.delete(firstKey);
+            }
+            latentCache.set(latentId, data);
+
+            return data;
+        }
+
+        async function loadLatent(id) {
+            if (!indexData) return;
+
+            currentLatent = Math.max(0, Math.min(id, maxLatent));
+            document.getElementById('latent-input').value = currentLatent;
+
+            // Show loading indicator
+            document.getElementById('loading-indicator').style.display = 'inline-block';
+
+            // Update header with index data (available immediately)
+            const indexInfo = indexData.latents[currentLatent.toString()];
+            document.getElementById('latent-id').textContent = `Latent ${currentLatent}`;
+
+            const labelEl = document.getElementById('latent-label');
+            if (indexInfo && indexInfo.label) {
+                labelEl.textContent = `"${indexInfo.label}"`;
+                labelEl.style.display = 'inline-block';
+            } else {
+                labelEl.style.display = 'none';
+            }
+
+            document.getElementById('latent-stats').textContent =
+                indexInfo && indexInfo.total_firings ? `${indexInfo.total_firings.toLocaleString()} firings` : '';
+
+            try {
+                const latentData = await loadLatentData(currentLatent);
+                renderLatent(latentData);
+            } catch (error) {
+                document.getElementById('content').innerHTML =
+                    `<div class="error">Error loading latent ${currentLatent}: ${error.message}</div>`;
+            } finally {
+                document.getElementById('loading-indicator').style.display = 'none';
+            }
+        }
+
+        function renderLatent(latentData) {
+            // Handle both old format (top_examples) and new format (examples.top, etc.)
+            const examples = latentData.examples || { top: latentData.top_examples || [] };
+            const stats = latentData.activation_stats || {};
+            const histogram = latentData.histogram;
+
+            // Compute total examples count
+            let totalExamples = 0;
+            for (const key of Object.keys(examples)) {
+                totalExamples += (examples[key] || []).length;
+            }
+
+            // Summary bar with stats
+            const summaryParts = [
+                `<div class="stat-item"><span class="stat-label">examples:</span><span class="stat-value">${totalExamples}</span></div>`,
+            ];
+
+            if (stats.max !== undefined) {
+                summaryParts.push(`<div class="stat-item"><span class="stat-label">max:</span><span class="stat-value">${stats.max.toFixed(2)}</span></div>`);
+            }
+            if (stats.p90 !== undefined) {
+                summaryParts.push(`<div class="stat-item"><span class="stat-label">p90:</span><span class="stat-value">${stats.p90.toFixed(2)}</span></div>`);
+            }
+            if (stats.p50 !== undefined) {
+                summaryParts.push(`<div class="stat-item"><span class="stat-label">p50:</span><span class="stat-value">${stats.p50.toFixed(2)}</span></div>`);
+            }
+            if (stats.p10 !== undefined) {
+                summaryParts.push(`<div class="stat-item"><span class="stat-label">p10:</span><span class="stat-value">${stats.p10.toFixed(2)}</span></div>`);
+            }
+            if (stats.min !== undefined) {
+                summaryParts.push(`<div class="stat-item"><span class="stat-label">min:</span><span class="stat-value">${stats.min.toFixed(2)}</span></div>`);
+            }
+
+            document.getElementById('summary-bar').innerHTML = summaryParts.join('');
+
+            // Draw histogram (from stored data if available, otherwise from examples)
+            if (histogram && histogram.bins && histogram.bins.length > 0) {
+                drawHistogramFromData(histogram);
+            } else {
+                // Fallback: compute from visible examples
+                const allActivations = [];
+                for (const key of Object.keys(examples)) {
+                    for (const ex of (examples[key] || [])) {
+                        allActivations.push(ex.max_activation || ex.activation || 0);
+                    }
+                }
+                drawHistogramFromActivations(allActivations);
+            }
+
+            // Render examples by section
+            const container = document.getElementById('content');
+            const viewClass = currentView === 'grid' ? 'examples-grid' : 'examples-list';
+
+            let html = '';
+            let globalRank = 0;
+
+            for (const section of SECTIONS) {
+                const sectionExamples = examples[section.key] || [];
+                if (sectionExamples.length === 0) continue;
+
+                html += `
+                    <div class="section-header ${section.key}">
+                        <span class="section-title">${section.title}</span>
+                        <span class="section-range">${section.range}</span>
+                        <span class="section-count">${sectionExamples.length} examples</span>
+                    </div>
+                    <div class="${viewClass}">
+                `;
+
+                for (const example of sectionExamples) {
+                    globalRank++;
+                    const activation = example.max_activation || example.activation || 0;
+                    const nFirings = example.n_firings || 1;
+                    const tokens = renderTokens(example, stats.max || activation);
+
+                    const firingsLabel = nFirings > 1 ? `${nFirings}x` : '';
+
+                    html += `
+                        <div class="example">
+                            <span class="example-activation">${activation.toFixed(1)}</span>
+                            ${firingsLabel ? `<span class="example-firings">${firingsLabel}</span>` : ''}
+                            <span class="example-rank">#${globalRank}</span>
+                            <div class="example-context">${tokens}</div>
+                        </div>
+                    `;
+                }
+
+                html += '</div>';
+            }
+
+            if (html === '') {
+                html = '<div class="loading">No examples found for this latent</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function renderTokens(example, globalMax) {
+            const tokens = example.tokens || [];
+            const activations = example.token_activations || [];
+
+            // Find max activation in this example for relative scaling
+            const localMax = Math.max(...activations.filter(a => a > 0), 0.001);
+
+            return tokens.map((token, idx) => {
+                const act = activations[idx] || 0;
+                const escaped = escapeHtml(token);
+
+                if (act > 0) {
+                    // Scale by local max for visibility, use 9 intensity levels
+                    const intensity = Math.ceil((act / localMax) * 9);
+                    const level = Math.min(9, Math.max(1, intensity));
+                    return `<span class="token highlighted act-${level}" title="activation: ${act.toFixed(3)}">${escaped}</span>`;
+                }
+
+                return `<span class="token">${escaped}</span>`;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function drawHistogramFromData(histogram) {
+            const canvas = document.getElementById('histogram');
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+
+            // Clear
+            ctx.fillStyle = '#fafafa';
+            ctx.fillRect(0, 0, width, height);
+
+            const bins = histogram.bins || [];
+            const counts = histogram.counts || [];
+
+            if (counts.length === 0) return;
+
+            let maxCount = Math.max(...counts);
+            if (useLogScale) {
+                maxCount = Math.log10(maxCount + 1);
+            }
+
+            const barWidth = width / counts.length;
+
+            // Draw bars
+            counts.forEach((count, i) => {
+                let barHeight;
+                if (useLogScale) {
+                    barHeight = count > 0 ? (Math.log10(count + 1) / maxCount) * (height - 4) : 0;
+                } else {
+                    barHeight = (count / maxCount) * (height - 4);
+                }
+                const x = i * barWidth;
+                const y = height - barHeight - 2;
+
+                // Gradient from light to dark orange based on position (activation value)
+                const intensity = i / counts.length;
+                ctx.fillStyle = `rgba(255, 69, 0, ${0.3 + intensity * 0.7})`;
+                ctx.fillRect(x + 0.5, y, barWidth - 1, barHeight);
+            });
+
+            // Draw log scale indicator if active
+            if (useLogScale) {
+                ctx.fillStyle = '#666';
+                ctx.font = '8px monospace';
+                ctx.fillText('log', 2, 10);
+            }
+        }
+
+        function drawHistogramFromActivations(activations) {
+            const canvas = document.getElementById('histogram');
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+
+            // Clear
+            ctx.fillStyle = '#fafafa';
+            ctx.fillRect(0, 0, width, height);
+
+            if (!activations.length) return;
+
+            // Compute histogram bins
+            const numBins = 20;
+            const min = Math.min(...activations);
+            const max = Math.max(...activations);
+            const range = max - min || 1;
+            const binSize = range / numBins;
+
+            const bins = new Array(numBins).fill(0);
+            activations.forEach(act => {
+                const binIdx = Math.min(numBins - 1, Math.floor((act - min) / binSize));
+                bins[binIdx]++;
+            });
+
+            let maxBin = Math.max(...bins);
+            if (useLogScale) {
+                maxBin = Math.log10(maxBin + 1);
+            }
+
+            const barWidth = width / numBins;
+
+            // Draw bars
+            bins.forEach((count, i) => {
+                let barHeight;
+                if (useLogScale) {
+                    barHeight = count > 0 ? (Math.log10(count + 1) / maxBin) * (height - 4) : 0;
+                } else {
+                    barHeight = (count / maxBin) * (height - 4);
+                }
+                const x = i * barWidth;
+                const y = height - barHeight - 2;
+
+                const intensity = i / numBins;
+                ctx.fillStyle = `rgba(255, 69, 0, ${0.3 + intensity * 0.7})`;
+                ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
+            });
+
+            if (useLogScale) {
+                ctx.fillStyle = '#666';
+                ctx.font = '8px monospace';
+                ctx.fillText('log', 2, 10);
+            }
+        }
+
+        function toggleLogScale() {
+            useLogScale = !useLogScale;
+            document.getElementById('histogram-container').classList.toggle('log-scale', useLogScale);
+            // Re-render current latent to update histogram
+            if (latentCache.has(currentLatent)) {
+                renderLatent(latentCache.get(currentLatent));
+            }
+        }
+
+        function setView(view) {
+            currentView = view;
+            document.getElementById('grid-btn').classList.toggle('active', view === 'grid');
+            document.getElementById('list-btn').classList.toggle('active', view === 'list');
+
+            // Re-render to apply view change
+            if (latentCache.has(currentLatent)) {
+                renderLatent(latentCache.get(currentLatent));
+            }
+        }
+
+        function prevLatent() {
+            loadLatent(currentLatent - 1);
+        }
+
+        function nextLatent() {
+            loadLatent(currentLatent + 1);
+        }
+
+        function goToLatent() {
+            const input = document.getElementById('latent-input');
+            loadLatent(parseInt(input.value) || 0);
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            // Don't intercept if typing in input
+            if (e.target.tagName === 'INPUT') {
+                if (e.key === 'Enter') {
+                    goToLatent();
+                    e.target.blur();
+                }
+                return;
+            }
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                    prevLatent();
+                    e.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    nextLatent();
+                    e.preventDefault();
+                    break;
+                case 'g':
+                    document.getElementById('latent-input').focus();
+                    document.getElementById('latent-input').select();
+                    e.preventDefault();
+                    break;
+                case 'l':
+                    toggleLogScale();
+                    e.preventDefault();
+                    break;
+            }
+        });
+
+        // Handle input changes
+        document.getElementById('latent-input').addEventListener('change', goToLatent);
+
+        // Histogram click to toggle log scale
+        document.getElementById('histogram-container').addEventListener('click', toggleLogScale);
+
+        // Load index on page load
+        loadIndex();
+    </script>
+</body>
+</html>

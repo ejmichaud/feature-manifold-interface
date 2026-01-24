@@ -52,7 +52,7 @@ def test_sae_loading(sae_release: str, sae_id: str):
         raise
 
 
-def test_model_loading(model_name: str, layer: int):
+def test_model_loading(model_name: str, layer: int, device: str = "cuda"):
     """Test that we can load the model and access layers."""
     print("\n" + "=" * 60)
     print("TEST 2: Model Loading")
@@ -65,10 +65,15 @@ def test_model_loading(model_name: str, layer: int):
             tokenizer.pad_token = tokenizer.eos_token
 
         print(f"  Loading model (this may take a while for 27B)...")
+        # Use specific device if provided (e.g., cuda:5), otherwise use auto
+        if device.startswith("cuda:"):
+            device_map = {"": device}
+        else:
+            device_map = "auto"
         model = Gemma3ForConditionalGeneration.from_pretrained(
             model_name,
             torch_dtype=torch.bfloat16,
-            device_map="auto",
+            device_map=device_map,
         )
         model.eval()
 
@@ -88,7 +93,7 @@ def test_model_loading(model_name: str, layer: int):
         raise
 
 
-def test_hook_capture(model, tokenizer, layer: int):
+def test_hook_capture(model, tokenizer, layer: int, device: str = "cuda"):
     """Test that we can capture activations from the model."""
     print("\n" + "=" * 60)
     print("TEST 3: Activation Capture via Hook")
@@ -109,9 +114,9 @@ def test_hook_capture(model, tokenizer, layer: int):
         test_text = "The quick brown fox jumps over the lazy dog."
         inputs = tokenizer(test_text, return_tensors="pt")
 
-        # Move to model device
-        device = next(model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        # Move to model device (use specified device or auto-detect from model)
+        model_device = next(model.parameters()).device
+        inputs = {k: v.to(model_device) for k, v in inputs.items()}
 
         with torch.no_grad():
             model(**inputs)
@@ -134,16 +139,16 @@ def test_hook_capture(model, tokenizer, layer: int):
         handle.remove()
 
 
-def test_sae_encoding(sae, hidden: torch.Tensor):
+def test_sae_encoding(sae, hidden: torch.Tensor, device: str = "cuda"):
     """Test SAE encoding produces reasonable outputs."""
     print("\n" + "=" * 60)
     print("TEST 4: SAE Encoding")
     print("=" * 60)
 
     # Move SAE to same device/dtype as hidden
-    device = hidden.device
+    target_device = hidden.device
     dtype = hidden.dtype
-    sae = sae.to(device).to(dtype)
+    sae = sae.to(target_device).to(dtype)
 
     # Check dimension compatibility
     if hidden.shape[-1] != sae.cfg.d_in:
@@ -235,18 +240,19 @@ def test_reconstruction(sae, hidden: torch.Tensor, latents: torch.Tensor):
 
 def main():
     parser = argparse.ArgumentParser(description="Test SAE loading and activation capture")
-    parser.add_argument("--layer", type=int, required=True, help="Layer to test")
-    parser.add_argument("--sae-width", type=str, default="16k",
-                        choices=["16k", "65k", "262k", "1m"], help="SAE width")
-    parser.add_argument("--sae-l0", type=str, default="small",
-                        choices=["small", "big"], help="SAE L0 variant")
+    parser.add_argument("--layer", type=int, default=31, help="Layer to test (default: 31)")
+    parser.add_argument("--sae-width", type=str, default="65k",
+                        choices=["16k", "65k", "262k", "1m"], help="SAE width (default: 65k)")
+    parser.add_argument("--sae-l0", type=str, default="medium",
+                        choices=["small", "medium", "big"], help="SAE L0 variant (default: medium)")
     parser.add_argument("--quick", action="store_true",
                         help="Skip model loading (only test SAE)")
+    parser.add_argument("--device", type=str, default="cuda", help="Device for SAE and tensors (e.g., cuda:5)")
 
     args = parser.parse_args()
 
     model_name = "google/gemma-3-27b-pt"
-    sae_release = "gemma-scope-2-27b-pt-resid_post"
+    sae_release = "gemma-scope-2-27b-pt-res"
     sae_id = f"layer_{args.layer}_width_{args.sae_width}_l0_{args.sae_l0}"
 
     print(f"Testing configuration:")
@@ -266,13 +272,13 @@ def main():
         return
 
     # Test 2: Model loading
-    model, tokenizer = test_model_loading(model_name, args.layer)
+    model, tokenizer = test_model_loading(model_name, args.layer, args.device)
 
     # Test 3: Hook capture
-    hidden = test_hook_capture(model, tokenizer, args.layer)
+    hidden = test_hook_capture(model, tokenizer, args.layer, args.device)
 
     # Test 4: SAE encoding
-    latents = test_sae_encoding(sae, hidden)
+    latents = test_sae_encoding(sae, hidden, args.device)
 
     # Test 5: Reconstruction
     test_reconstruction(sae, hidden, latents)
@@ -285,8 +291,8 @@ def main():
     print(f"      --layer {args.layer} \\")
     print(f"      --sae-width {args.sae_width} \\")
     print(f"      --sae-l0 {args.sae_l0} \\")
-    print(f"      --output-dir ../data/raw_activations \\")
-    print(f"      --num-tokens 1000000")
+    print(f"      --output-dir /remote/ericjm/feature-manifold-interface/data/raw_activations \\")
+    print(f"      --num-tokens 10000000")
 
 
 if __name__ == "__main__":

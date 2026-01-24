@@ -1,0 +1,18 @@
+# Gemma 3 27B - Layer 16 - 65k SAE - Medium L0
+# 20M tokens from pile-uncopyrighted
+
+model: google/gemma-3-27b-pt
+layer: 16
+sae-width: 65k
+sae-l0: medium
+
+num-tokens: 20000000
+data-root: /remote/ericjm/feature-manifold-interface/data
+
+device: cuda:0
+batch-size: 2
+seq-len: 1024
+n-workers: 8
+
+top-k: 50
+context-size: 16

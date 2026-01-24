@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAE Latent Explorer - UMAP</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+            background: #fafafa;
+            color: #1a1a1a;
+            font-size: 13px;
+            line-height: 1.5;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Main layout */
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Left panel - UMAP */
+        .umap-panel {
+            width: 50%;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e0e0e0;
+            background: white;
+        }
+
+        .umap-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: white;
+        }
+
+        .umap-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .umap-stats {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .umap-controls {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .umap-btn {
+            padding: 4px 10px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            color: #666;
+            font-family: inherit;
+        }
+
+        .umap-btn:hover {
+            border-color: #ff4500;
+            color: #ff4500;
+        }
+
+        .umap-canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #fafafa;
+        }
+
+        #umap-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: crosshair;
+        }
+
+        .umap-hint {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            font-size: 10px;
+            color: #999;
+            background: rgba(255,255,255,0.9);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .key {
+            display: inline-block;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-size: 10px;
+            margin: 0 2px;
+        }
+
+        /* Right panel - Examples */
+        .examples-panel {
+            width: 50%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .examples-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: white;
+        }
+
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .nav-btn:hover {
+            border-color: #ff4500;
+            color: #ff4500;
+        }
+
+        .latent-input {
+            width: 70px;
+            height: 28px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 0 8px;
+            font-family: inherit;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .latent-input:focus {
+            outline: none;
+            border-color: #ff4500;
+        }
+
+        .latent-range {
+            color: #999;
+            font-size: 11px;
+        }
+
+        .latent-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+
+        .latent-id {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .latent-label {
+            background: #ff4500;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .latent-stats {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .histogram-container {
+            width: 150px;
+            height: 32px;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .histogram-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .loading-indicator {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ddd;
+            border-top-color: #ff4500;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Examples content */
+        .examples-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px;
+        }
+
+        .summary-bar {
+            display: flex;
+            gap: 16px;
+            padding: 8px 0;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            font-size: 11px;
+            color: #666;
+        }
+
+        .stat-item {
+            display: flex;
+            gap: 4px;
+        }
+
+        .stat-label {
+            color: #999;
+        }
+
+        .stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .examples-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .example {
+            background: white;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+            padding: 6px 10px;
+            position: relative;
+            transition: border-color 0.15s;
+        }
+
+        .example:hover {
+            border-color: #ccc;
+        }
+
+        .example-rank {
+            position: absolute;
+            top: 4px;
+            right: 8px;
+            font-size: 10px;
+            color: #bbb;
+        }
+
+        .example-firings {
+            position: absolute;
+            top: 4px;
+            right: 50px;
+            font-size: 10px;
+            color: #999;
+        }
+
+        .example-activation {
+            position: absolute;
+            top: 4px;
+            right: 28px;
+            font-size: 10px;
+            color: #ff4500;
+            font-weight: 600;
+        }
+
+        .example-context {
+            font-size: 12px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            padding-right: 45px;
+        }
+
+        /* Section headers for percentile groups */
+        .section-header {
+            font-size: 11px;
+            font-weight: 600;
+            color: #666;
+            padding: 8px 0 4px 0;
+            margin-top: 8px;
+            border-bottom: 2px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .section-header:first-child {
+            margin-top: 0;
+        }
+
+        .section-header .range {
+            font-weight: normal;
+            color: #999;
+            font-size: 10px;
+        }
+
+        .section-header.top { border-bottom-color: #ff4500; }
+        .section-header.high { border-bottom-color: #ff8c00; }
+        .section-header.medium { border-bottom-color: #ffd700; }
+        .section-header.low { border-bottom-color: #90ee90; }
+
+        .histogram-container {
+            cursor: pointer;
+        }
+
+        .histogram-hint {
+            font-size: 9px;
+            color: #999;
+            text-align: right;
+            margin-top: 2px;
+        }
+
+        /* Token highlighting */
+        .token {
+            display: inline;
+            border-radius: 2px;
+        }
+
+        .token.highlighted {
+            padding: 1px 0;
+        }
+
+        .act-1 { background: rgba(255, 69, 0, 0.08); }
+        .act-2 { background: rgba(255, 69, 0, 0.15); }
+        .act-3 { background: rgba(255, 69, 0, 0.25); }
+        .act-4 { background: rgba(255, 69, 0, 0.35); }
+        .act-5 { background: rgba(255, 69, 0, 0.50); }
+        .act-6 { background: rgba(255, 69, 0, 0.65); }
+        .act-7 { background: rgba(255, 69, 0, 0.80); color: white; }
+        .act-8 { background: rgba(255, 69, 0, 0.90); color: white; }
+        .act-9 { background: rgba(255, 69, 0, 1.0); color: white; }
+
+        /* States */
+        .loading, .error, .placeholder {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+
+        .error {
+            color: #cc0000;
+            background: #fff0f0;
+            border-radius: 8px;
+        }
+
+        .placeholder {
+            color: #999;
+            font-style: italic;
+        }
+
+        /* Hover tooltip for UMAP */
+        .umap-tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left: UMAP -->
+        <div class="umap-panel">
+            <div class="umap-header">
+                <span class="umap-title">UMAP Projection</span>
+                <span class="umap-stats" id="umap-stats">Loading...</span>
+                <div class="umap-controls">
+                    <button class="umap-btn" onclick="resetView()">Reset View</button>
+                </div>
+            </div>
+            <div class="umap-canvas-container" id="umap-container">
+                <canvas id="umap-canvas"></canvas>
+                <div class="umap-tooltip" id="umap-tooltip"></div>
+                <div class="umap-hint">
+                    <span class="key">Click</span> select
+                    <span class="key">Drag</span> pan
+                    <span class="key">Scroll</span> zoom
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Examples -->
+        <div class="examples-panel">
+            <div class="examples-header">
+                <div class="nav-controls">
+                    <button class="nav-btn" onclick="prevLatent()" title="Previous">‹</button>
+                    <input type="number" class="latent-input" id="latent-input" value="0" min="0">
+                    <button class="nav-btn" onclick="nextLatent()" title="Next">›</button>
+                    <span class="latent-range" id="latent-range"></span>
+                    <span class="loading-indicator" id="loading-indicator" style="display: none;"></span>
+                </div>
+                <div class="latent-info">
+                    <span class="latent-id" id="latent-id">Select a latent</span>
+                    <span class="latent-label" id="latent-label" style="display: none;"></span>
+                    <span class="latent-stats" id="latent-stats"></span>
+                </div>
+                <div class="histogram-container" title="Click or press 'l' to toggle log scale">
+                    <canvas class="histogram-canvas" id="histogram"></canvas>
+                </div>
+            </div>
+            <div class="examples-content">
+                <div class="summary-bar" id="summary-bar"></div>
+                <div id="examples-container" class="examples-list">
+                    <div class="placeholder">Click a point on the UMAP to view its examples</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const DATA_DIR = '../data/latent_examples';
+
+        // State
+        let positions = null;
+        let indexData = null;
+        let currentLatent = null;
+        let currentLatentData = null;
+        let maxLatent = 0;
+        let latentCache = new Map();
+        const CACHE_SIZE = 50;
+        let useLogScale = false;
+
+        // Section configuration
+        const SECTIONS = [
+            { key: 'top', title: 'Top Activations', range: '90-100%' },
+            { key: 'high', title: 'High Activations', range: '70-90%' },
+            { key: 'medium', title: 'Medium Activations', range: '40-70%' },
+            { key: 'low', title: 'Low Activations', range: '10-40%' },
+        ];
+
+        // UMAP view state
+        let viewTransform = { x: 0, y: 0, scale: 1 };
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let dataBounds = { minX: 0, maxX: 1, minY: 0, maxY: 1 };
+
+        // Canvas
+        let canvas, ctx;
+        const POINT_RADIUS = 2;
+        const SELECTED_RADIUS = 6;
+
+        // Initialize
+        async function init() {
+            canvas = document.getElementById('umap-canvas');
+            ctx = canvas.getContext('2d');
+
+            setupCanvasEvents();
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            try {
+                // Load data in parallel
+                const [posData, idxData] = await Promise.all([
+                    fetch(`${DATA_DIR}/positions.json`).then(r => r.json()),
+                    fetch(`${DATA_DIR}/index.json`).then(r => r.json())
+                ]);
+
+                positions = posData.positions;
+                indexData = idxData;
+                maxLatent = positions.length - 1;
+
+                document.getElementById('umap-stats').textContent = `${positions.length.toLocaleString()} latents`;
+                document.getElementById('latent-range').textContent = `/ ${maxLatent.toLocaleString()}`;
+                document.getElementById('latent-input').max = maxLatent;
+
+                // Compute data bounds
+                computeBounds();
+                resetView();
+
+            } catch (error) {
+                document.getElementById('umap-stats').textContent = 'Error loading data';
+                document.getElementById('examples-container').innerHTML =
+                    `<div class="error">
+                        <strong>Error:</strong> ${error.message}<br><br>
+                        Make sure you've run:<br>
+                        <code>python scripts/export_umap_json.py</code><br>
+                        <code>python scripts/extract_top_activations.py</code>
+                    </div>`;
+            }
+        }
+
+        function computeBounds() {
+            if (!positions || !positions.length) return;
+
+            dataBounds.minX = Infinity;
+            dataBounds.maxX = -Infinity;
+            dataBounds.minY = Infinity;
+            dataBounds.maxY = -Infinity;
+
+            for (const [x, y] of positions) {
+                dataBounds.minX = Math.min(dataBounds.minX, x);
+                dataBounds.maxX = Math.max(dataBounds.maxX, x);
+                dataBounds.minY = Math.min(dataBounds.minY, y);
+                dataBounds.maxY = Math.max(dataBounds.maxY, y);
+            }
+
+            // Add padding
+            const padX = (dataBounds.maxX - dataBounds.minX) * 0.05;
+            const padY = (dataBounds.maxY - dataBounds.minY) * 0.05;
+            dataBounds.minX -= padX;
+            dataBounds.maxX += padX;
+            dataBounds.minY -= padY;
+            dataBounds.maxY += padY;
+        }
+
+        function resetView() {
+            if (!positions) return;
+
+            const container = document.getElementById('umap-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            const dataWidth = dataBounds.maxX - dataBounds.minX;
+            const dataHeight = dataBounds.maxY - dataBounds.minY;
+
+            const scaleX = width / dataWidth;
+            const scaleY = height / dataHeight;
+            viewTransform.scale = Math.min(scaleX, scaleY) * 0.95;
+
+            // Center the view
+            viewTransform.x = width / 2 - (dataBounds.minX + dataWidth / 2) * viewTransform.scale;
+            viewTransform.y = height / 2 - (dataBounds.minY + dataHeight / 2) * viewTransform.scale;
+
+            render();
+        }
+
+        function resizeCanvas() {
+            const container = document.getElementById('umap-container');
+            const dpr = window.devicePixelRatio || 1;
+
+            canvas.width = container.clientWidth * dpr;
+            canvas.height = container.clientHeight * dpr;
+            canvas.style.width = container.clientWidth + 'px';
+            canvas.style.height = container.clientHeight + 'px';
+
+            ctx.scale(dpr, dpr);
+
+            if (positions) {
+                render();
+            }
+        }
+
+        function dataToScreen(x, y) {
+            return {
+                x: x * viewTransform.scale + viewTransform.x,
+                y: y * viewTransform.scale + viewTransform.y
+            };
+        }
+
+        function screenToData(x, y) {
+            return {
+                x: (x - viewTransform.x) / viewTransform.scale,
+                y: (y - viewTransform.y) / viewTransform.scale
+            };
+        }
+
+        function render() {
+            if (!positions) return;
+
+            const width = canvas.clientWidth;
+            const height = canvas.clientHeight;
+
+            // Clear
+            ctx.fillStyle = '#fafafa';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw points
+            ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+
+            for (let i = 0; i < positions.length; i++) {
+                if (i === currentLatent) continue; // Draw selected last
+
+                const [x, y] = positions[i];
+                const screen = dataToScreen(x, y);
+
+                // Skip if off-screen
+                if (screen.x < -10 || screen.x > width + 10 ||
+                    screen.y < -10 || screen.y > height + 10) continue;
+
+                ctx.beginPath();
+                ctx.arc(screen.x, screen.y, POINT_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw selected point
+            if (currentLatent !== null && positions[currentLatent]) {
+                const [x, y] = positions[currentLatent];
+                const screen = dataToScreen(x, y);
+
+                // Outer ring
+                ctx.strokeStyle = '#ff4500';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(screen.x, screen.y, SELECTED_RADIUS, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Inner fill
+                ctx.fillStyle = '#ff4500';
+                ctx.beginPath();
+                ctx.arc(screen.x, screen.y, POINT_RADIUS + 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function setupCanvasEvents() {
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                dragStart = { x: e.offsetX, y: e.offsetY };
+                canvas.style.cursor = 'grabbing';
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const dx = e.offsetX - dragStart.x;
+                    const dy = e.offsetY - dragStart.y;
+                    viewTransform.x += dx;
+                    viewTransform.y += dy;
+                    dragStart = { x: e.offsetX, y: e.offsetY };
+                    render();
+                } else {
+                    // Hover detection
+                    updateHover(e.offsetX, e.offsetY);
+                }
+            });
+
+            canvas.addEventListener('mouseup', (e) => {
+                if (isDragging) {
+                    const dx = Math.abs(e.offsetX - dragStart.x);
+                    const dy = Math.abs(e.offsetY - dragStart.y);
+
+                    // If barely moved, treat as click
+                    if (dx < 5 && dy < 5) {
+                        handleClick(e.offsetX, e.offsetY);
+                    }
+                }
+                isDragging = false;
+                canvas.style.cursor = 'crosshair';
+            });
+
+            canvas.addEventListener('mouseleave', () => {
+                isDragging = false;
+                canvas.style.cursor = 'crosshair';
+                hideTooltip();
+            });
+
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+
+                const mouseX = e.offsetX;
+                const mouseY = e.offsetY;
+
+                // Zoom toward mouse position
+                const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+                const newScale = viewTransform.scale * zoomFactor;
+
+                // Limit zoom
+                if (newScale < 0.1 || newScale > 100) return;
+
+                // Adjust position to zoom toward mouse
+                viewTransform.x = mouseX - (mouseX - viewTransform.x) * zoomFactor;
+                viewTransform.y = mouseY - (mouseY - viewTransform.y) * zoomFactor;
+                viewTransform.scale = newScale;
+
+                render();
+            });
+
+            canvas.addEventListener('click', (e) => {
+                // Handled in mouseup for drag detection
+            });
+        }
+
+        function findNearestLatent(screenX, screenY) {
+            if (!positions) return null;
+
+            let nearest = null;
+            let minDist = Infinity;
+            const threshold = 20; // pixels
+
+            for (let i = 0; i < positions.length; i++) {
+                const [x, y] = positions[i];
+                const screen = dataToScreen(x, y);
+
+                const dist = Math.sqrt(
+                    (screen.x - screenX) ** 2 +
+                    (screen.y - screenY) ** 2
+                );
+
+                if (dist < minDist && dist < threshold) {
+                    minDist = dist;
+                    nearest = i;
+                }
+            }
+
+            return nearest;
+        }
+
+        function handleClick(screenX, screenY) {
+            const latentId = findNearestLatent(screenX, screenY);
+            if (latentId !== null) {
+                selectLatent(latentId);
+            }
+        }
+
+        function updateHover(screenX, screenY) {
+            const latentId = findNearestLatent(screenX, screenY);
+            const tooltip = document.getElementById('umap-tooltip');
+
+            if (latentId !== null) {
+                const info = indexData?.latents?.[latentId.toString()];
+                const label = info?.label ? `"${info.label}"` : '';
+                tooltip.textContent = `Latent ${latentId} ${label}`;
+                tooltip.style.left = (screenX + 10) + 'px';
+                tooltip.style.top = (screenY - 25) + 'px';
+                tooltip.style.display = 'block';
+                canvas.style.cursor = 'pointer';
+            } else {
+                hideTooltip();
+                if (!isDragging) {
+                    canvas.style.cursor = 'crosshair';
+                }
+            }
+        }
+
+        function hideTooltip() {
+            document.getElementById('umap-tooltip').style.display = 'none';
+        }
+
+        // Latent selection and display
+        async function selectLatent(id) {
+            currentLatent = Math.max(0, Math.min(id, maxLatent));
+            document.getElementById('latent-input').value = currentLatent;
+
+            // Update header
+            document.getElementById('latent-id').textContent = `Latent ${currentLatent}`;
+
+            const labelEl = document.getElementById('latent-label');
+            const info = indexData?.latents?.[currentLatent.toString()];
+
+            if (info?.label) {
+                labelEl.textContent = `"${info.label}"`;
+                labelEl.style.display = 'inline-block';
+            } else {
+                labelEl.style.display = 'none';
+            }
+
+            document.getElementById('latent-stats').textContent =
+                info?.total_firings ? `${info.total_firings.toLocaleString()} firings` : '';
+
+            // Show loading
+            document.getElementById('loading-indicator').style.display = 'inline-block';
+
+            // Re-render UMAP to show selection
+            render();
+
+            // Load and display examples
+            try {
+                const latentData = await loadLatentData(currentLatent);
+                renderExamples(latentData);
+            } catch (error) {
+                document.getElementById('examples-container').innerHTML =
+                    `<div class="error">Error loading latent ${currentLatent}: ${error.message}</div>`;
+            } finally {
+                document.getElementById('loading-indicator').style.display = 'none';
+            }
+        }
+
+        async function loadLatentData(latentId) {
+            if (latentCache.has(latentId)) {
+                return latentCache.get(latentId);
+            }
+
+            const paddedId = String(latentId).padStart(5, '0');
+            const response = await fetch(`${DATA_DIR}/latents/${paddedId}.json`);
+            if (!response.ok) {
+                throw new Error(`Failed to load latent ${latentId}`);
+            }
+
+            const data = await response.json();
+
+            if (latentCache.size >= CACHE_SIZE) {
+                const firstKey = latentCache.keys().next().value;
+                latentCache.delete(firstKey);
+            }
+            latentCache.set(latentId, data);
+
+            return data;
+        }
+
+        function renderExamples(latentData) {
+            currentLatentData = latentData;
+
+            // Get stats from stored data or compute from examples
+            const stats = latentData.activation_stats || {};
+            const totalFirings = latentData.total_firings || 0;
+
+            // Count total examples across all sections
+            let totalExamples = 0;
+            if (latentData.examples) {
+                for (const section of SECTIONS) {
+                    const sectionExamples = latentData.examples[section.key] || [];
+                    totalExamples += sectionExamples.length;
+                }
+            } else if (latentData.top_examples) {
+                // Legacy format
+                totalExamples = latentData.top_examples.length;
+            }
+
+            document.getElementById('summary-bar').innerHTML = `
+                <div class="stat-item">
+                    <span class="stat-label">firings:</span>
+                    <span class="stat-value">${totalFirings.toLocaleString()}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">examples:</span>
+                    <span class="stat-value">${totalExamples}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">max:</span>
+                    <span class="stat-value">${(stats.max || 0).toFixed(2)}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">p50:</span>
+                    <span class="stat-value">${(stats.p50 || 0).toFixed(2)}</span>
+                </div>
+            `;
+
+            // Draw histogram from stored data if available
+            if (latentData.histogram) {
+                drawHistogramFromData(latentData.histogram);
+            } else {
+                // Legacy: compute from examples
+                const allExamples = latentData.top_examples || [];
+                const activations = allExamples.map(e => e.activation || e.max_activation);
+                drawHistogramFromActivations(activations);
+            }
+
+            const container = document.getElementById('examples-container');
+
+            // Handle new format with percentile groups
+            if (latentData.examples) {
+                let html = '';
+                const globalMax = stats.max || 1;
+
+                for (const section of SECTIONS) {
+                    const sectionExamples = latentData.examples[section.key] || [];
+                    if (sectionExamples.length === 0) continue;
+
+                    html += `<div class="section-header ${section.key}">
+                        <span>${section.title}</span>
+                        <span class="range">${section.range} · ${sectionExamples.length} examples</span>
+                    </div>`;
+
+                    html += sectionExamples.map((example, idx) => {
+                        const tokens = renderTokens(example, globalMax);
+                        const activation = example.max_activation || example.activation || 0;
+                        const nFirings = example.n_firings || 1;
+                        const firingInfo = nFirings > 1 ? `<span class="example-firings">${nFirings} tokens</span>` : '';
+                        return `
+                            <div class="example">
+                                <span class="example-activation">${activation.toFixed(1)}</span>
+                                ${firingInfo}
+                                <span class="example-rank">#${idx + 1}</span>
+                                <div class="example-context">${tokens}</div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                if (html === '') {
+                    container.innerHTML = '<div class="placeholder">No examples found for this latent</div>';
+                } else {
+                    container.innerHTML = html;
+                }
+            } else if (latentData.top_examples) {
+                // Legacy format
+                const examples = latentData.top_examples;
+                if (examples.length === 0) {
+                    container.innerHTML = '<div class="placeholder">No examples found for this latent</div>';
+                    return;
+                }
+
+                const maxAct = Math.max(...examples.map(e => e.activation));
+                container.innerHTML = examples.map((example, idx) => {
+                    const tokens = renderTokens(example, maxAct);
+                    return `
+                        <div class="example">
+                            <span class="example-activation">${example.activation.toFixed(1)}</span>
+                            <span class="example-rank">#${idx + 1}</span>
+                            <div class="example-context">${tokens}</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                container.innerHTML = '<div class="placeholder">No examples found for this latent</div>';
+            }
+        }
+
+        function renderTokens(example, globalMax) {
+            const tokens = example.tokens || [];
+            const activations = example.token_activations || [];
+            // Use max_activation for merged contexts, or find max from token_activations
+            const localMax = example.max_activation || Math.max(...activations.filter(a => a > 0), 0.001);
+
+            return tokens.map((token, idx) => {
+                const act = activations[idx] || 0;
+                const escaped = escapeHtml(token);
+
+                if (act > 0) {
+                    const intensity = Math.ceil((act / localMax) * 9);
+                    const level = Math.min(9, Math.max(1, intensity));
+                    return `<span class="token highlighted act-${level}" title="activation: ${act.toFixed(3)}">${escaped}</span>`;
+                }
+
+                return `<span class="token">${escaped}</span>`;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function drawHistogramFromData(histogram) {
+            const canvas = document.getElementById('histogram');
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+
+            ctx.fillStyle = '#fafafa';
+            ctx.fillRect(0, 0, width, height);
+
+            const bins = histogram.bins || [];
+            const counts = histogram.counts || [];
+
+            if (counts.length === 0) return;
+
+            let displayCounts = counts;
+            if (useLogScale) {
+                displayCounts = counts.map(c => c > 0 ? Math.log10(c + 1) : 0);
+            }
+
+            const maxCount = Math.max(...displayCounts);
+            const numBins = counts.length;
+            const barWidth = width / numBins;
+
+            displayCounts.forEach((count, i) => {
+                const barHeight = maxCount > 0 ? (count / maxCount) * (height - 4) : 0;
+                const x = i * barWidth;
+                const y = height - barHeight - 2;
+
+                const intensity = i / numBins;
+                ctx.fillStyle = `rgba(255, 69, 0, ${0.3 + intensity * 0.7})`;
+                ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
+            });
+        }
+
+        function drawHistogramFromActivations(activations) {
+            // Legacy fallback for old data format
+            const canvas = document.getElementById('histogram');
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const width = rect.width;
+            const height = rect.height;
+
+            ctx.fillStyle = '#fafafa';
+            ctx.fillRect(0, 0, width, height);
+
+            if (!activations.length) return;
+
+            const numBins = 15;
+            const min = Math.min(...activations);
+            const max = Math.max(...activations);
+            const range = max - min || 1;
+            const binSize = range / numBins;
+
+            const bins = new Array(numBins).fill(0);
+            activations.forEach(act => {
+                const binIdx = Math.min(numBins - 1, Math.floor((act - min) / binSize));
+                bins[binIdx]++;
+            });
+
+            let displayBins = bins;
+            if (useLogScale) {
+                displayBins = bins.map(c => c > 0 ? Math.log10(c + 1) : 0);
+            }
+
+            const maxBin = Math.max(...displayBins);
+            const barWidth = width / numBins;
+
+            displayBins.forEach((count, i) => {
+                const barHeight = maxBin > 0 ? (count / maxBin) * (height - 4) : 0;
+                const x = i * barWidth;
+                const y = height - barHeight - 2;
+
+                const intensity = i / numBins;
+                ctx.fillStyle = `rgba(255, 69, 0, ${0.3 + intensity * 0.7})`;
+                ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
+            });
+        }
+
+        function toggleLogScale() {
+            useLogScale = !useLogScale;
+            if (currentLatentData) {
+                if (currentLatentData.histogram) {
+                    drawHistogramFromData(currentLatentData.histogram);
+                } else if (currentLatentData.top_examples) {
+                    const activations = currentLatentData.top_examples.map(e => e.activation || e.max_activation);
+                    drawHistogramFromActivations(activations);
+                }
+            }
+        }
+
+        // Navigation
+        function prevLatent() {
+            if (currentLatent !== null) {
+                selectLatent(currentLatent - 1);
+            }
+        }
+
+        function nextLatent() {
+            if (currentLatent !== null) {
+                selectLatent(currentLatent + 1);
+            } else {
+                selectLatent(0);
+            }
+        }
+
+        function goToLatent() {
+            const input = document.getElementById('latent-input');
+            selectLatent(parseInt(input.value) || 0);
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') {
+                if (e.key === 'Enter') {
+                    goToLatent();
+                    e.target.blur();
+                }
+                return;
+            }
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                    prevLatent();
+                    e.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    nextLatent();
+                    e.preventDefault();
+                    break;
+                case 'g':
+                    document.getElementById('latent-input').focus();
+                    document.getElementById('latent-input').select();
+                    e.preventDefault();
+                    break;
+                case 'r':
+                    resetView();
+                    e.preventDefault();
+                    break;
+                case 'l':
+                    toggleLogScale();
+                    e.preventDefault();
+                    break;
+            }
+        });
+
+        document.getElementById('latent-input').addEventListener('change', goToLatent);
+
+        // Histogram click to toggle log scale
+        document.getElementById('histogram').addEventListener('click', toggleLogScale);
+
+        // Start
+        init();
+    </script>
+</body>
+</html>

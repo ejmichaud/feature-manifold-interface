@@ -1,5 +1,9 @@
 # Data (large, not committed)
 data/
+visualizer/data/
+
+# Notebooks (exploratory)
+notebooks/
 
 # Python
 __pycache__/
