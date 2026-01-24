@@ -162,10 +162,15 @@ def run_pipeline(
 
     scripts_dir = Path(__file__).parent
 
-    # Track overall success
-    all_success = True
+    # Helper to abort pipeline on critical failure
+    def abort_pipeline(step_name: str):
+        print(f"\n{'#' * 60}")
+        print(f"# PIPELINE ABORTED: {step_name} failed")
+        print(f"{'#' * 60}")
+        print(f"\nFix the error above and re-run. The pipeline will resume from where it left off.")
+        return False
 
-    # Step 1: Harvest activations
+    # Step 1: Harvest activations (CRITICAL)
     harvest_marker = dirs["raw_activations"] / ".harvest_complete"
     if skip_harvest:
         print("\n[SKIP] Harvest activations (--skip-harvest)")
@@ -187,11 +192,12 @@ def run_pipeline(
             "Harvest activations",
             dry_run=dry_run,
         )
+        if not success and not dry_run:
+            return abort_pipeline("Harvest activations")
         if success and not dry_run:
             mark_step_complete(harvest_marker, {"num_tokens": num_tokens})
-        all_success = all_success and success
 
-    # Step 2: Build per-latent indices
+    # Step 2: Build per-latent indices (CRITICAL)
     index_marker = dirs["experiment"] / ".index_complete"
     if check_step_complete(index_marker) and not force:
         print("\n[SKIP] Build indices (already complete)")
@@ -206,11 +212,12 @@ def run_pipeline(
             "Build per-latent indices",
             dry_run=dry_run,
         )
+        if not success and not dry_run:
+            return abort_pipeline("Build indices")
         if success and not dry_run:
             mark_step_complete(index_marker)
-        all_success = all_success and success
 
-    # Step 3: Compute graph edges and UMAP
+    # Step 3: Compute graph edges and UMAP (CRITICAL)
     graph_marker = dirs["graph"] / ".graph_complete"
     if skip_edges:
         # Still need UMAP, so run with --skip-coactivation --skip-jaccard
@@ -228,9 +235,10 @@ def run_pipeline(
                 "Compute UMAP positions (edges skipped)",
                 dry_run=dry_run,
             )
+            if not success and not dry_run:
+                return abort_pipeline("Compute UMAP")
             if success and not dry_run:
                 mark_step_complete(graph_marker, {"edges_skipped": True})
-            all_success = all_success and success
     elif check_step_complete(graph_marker) and not force:
         print("\n[SKIP] Compute graph edges (already complete)")
     else:
@@ -243,11 +251,12 @@ def run_pipeline(
             "Compute graph edges and UMAP positions",
             dry_run=dry_run,
         )
+        if not success and not dry_run:
+            return abort_pipeline("Compute graph edges")
         if success and not dry_run:
             mark_step_complete(graph_marker)
-        all_success = all_success and success
 
-    # Step 4: Extract top activations for visualizer
+    # Step 4: Extract top activations for visualizer (CRITICAL)
     extract_marker = dirs["visualizer"] / ".extract_complete"
     if check_step_complete(extract_marker) and not force:
         print("\n[SKIP] Extract top activations (already complete)")
@@ -266,16 +275,17 @@ def run_pipeline(
             "Extract top activations for visualizer",
             dry_run=dry_run,
         )
+        if not success and not dry_run:
+            return abort_pipeline("Extract top activations")
         if success and not dry_run:
             mark_step_complete(extract_marker, {"top_k": top_k})
-        all_success = all_success and success
 
-    # Step 5: Export UMAP positions to JSON
+    # Step 5: Export UMAP positions to JSON (non-critical)
     positions_json = dirs["visualizer"] / "positions.json"
     if positions_json.exists() and not force:
         print("\n[SKIP] Export UMAP positions (already exists)")
     else:
-        success = run_command(
+        run_command(
             [
                 sys.executable, scripts_dir / "export_umap_json.py",
                 "--positions-file", str(dirs["graph"] / "positions.npy"),
@@ -284,9 +294,9 @@ def run_pipeline(
             "Export UMAP positions to JSON",
             dry_run=dry_run,
         )
-        all_success = all_success and success
+        # Non-critical: continue even if this fails
 
-    # Update experiments manifest
+    # Update experiments manifest (non-critical)
     run_command(
         [
             sys.executable, scripts_dir / "update_experiments_manifest.py",
@@ -295,13 +305,11 @@ def run_pipeline(
         "Update experiments manifest",
         dry_run=dry_run,
     )
+    # Non-critical: continue even if this fails
 
     # Summary
     print(f"\n{'#' * 60}")
-    if all_success:
-        print(f"# Pipeline completed successfully!")
-    else:
-        print(f"# Pipeline completed with errors")
+    print(f"# Pipeline completed successfully!")
     print(f"{'#' * 60}")
     print(f"\nExperiment directory: {dirs['experiment']}")
     print(f"  ├── raw_activations/")
@@ -314,7 +322,7 @@ def run_pipeline(
     print(f"  #   ../data/experiments/{experiment_id}/visualizer")
     print(f"  python -m http.server 8080")
 
-    return all_success
+    return True  # If we get here, all critical steps succeeded
 
 
 def load_config(config_path: Path) -> dict:
