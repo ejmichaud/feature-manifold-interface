@@ -296,6 +296,39 @@ def run_pipeline(
         )
         # Non-critical: continue even if this fails
 
+    # Step 6: Export edges to JSON for graph visualizer (non-critical)
+    edges_json = dirs["visualizer"] / "edges.json"
+    if edges_json.exists() and not force:
+        print("\n[SKIP] Export edges (already exists)")
+    else:
+        run_command(
+            [
+                sys.executable, scripts_dir / "export_edges_json.py",
+                "--edges-file", str(dirs["graph"] / "decoder_similarity.npz"),
+                "--output", str(edges_json),
+                "--max-edges-per-node", "10",
+            ],
+            "Export edges to JSON",
+            dry_run=dry_run,
+        )
+        # Non-critical: continue even if this fails
+
+    # Step 7: Build search index for visualizer (non-critical)
+    search_index_json = dirs["visualizer"] / "search_index.json"
+    if search_index_json.exists() and not force:
+        print("\n[SKIP] Build search index (already exists)")
+    else:
+        run_command(
+            [
+                sys.executable, scripts_dir / "build_search_index.py",
+                "--visualizer-dir", str(dirs["visualizer"]),
+                "--output", str(search_index_json),
+            ],
+            "Build search index for visualizer",
+            dry_run=dry_run,
+        )
+        # Non-critical: continue even if this fails
+
     # Update experiments manifest (non-critical)
     run_command(
         [

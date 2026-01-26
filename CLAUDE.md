@@ -5,10 +5,10 @@ Interactive visualization interface for exploring LLM feature geometry, inspired
 ## Project Overview
 
 This tool allows researchers to explore the geometry of LLM features through:
-1. **Latent browser** - View max-activating examples for individual latents
-2. **UMAP explorer** - Click latents on 2D projection to browse examples
-3. **Graph visualization** - Latent relationships (cosine/Jaccard similarity) *(planned)*
-4. **Point cloud visualization** - Activation reconstructions using selected feature clusters *(planned)*
+1. **Latent browser** (`index.html`) - View max-activating examples for individual latents
+2. **UMAP explorer** (`umap.html`) - Click latents on 2D projection to browse examples
+3. **Graph visualizer** (`graph.html`) - Force-directed graph of latent relationships with point cloud visualization
+4. **Point cloud visualization** - Activation reconstructions using selected feature clusters (in graph.html)
 
 ## Configuration
 
@@ -197,6 +197,8 @@ python -m http.server 8080
 | `compute_edges.py` | Compute UMAP positions + similarity edges |
 | `extract_top_activations.py` | Extract top-k examples per latent for visualizer (parallel) |
 | `export_umap_json.py` | Convert positions.npy to JSON for web |
+| `export_edges_json.py` | Convert sparse edges to JSON for graph visualizer |
+| `update_experiments_manifest.py` | Scan experiments and update manifest |
 | `sanity_check_sae.py` | Measure SAE variance explained and L0 |
 | `test_sae_loading.py` | Validate SAE loading works |
 
@@ -217,6 +219,44 @@ Click latents on 2D projection:
 - **Left panel**: UMAP scatter plot (pan/zoom/click)
 - **Right panel**: Max-activating examples for selected latent
 - Press `r` to reset view
+
+### Graph Visualizer (`visualizer/graph.html`)
+
+Interactive force-directed graph with point cloud visualization:
+
+**Left Panel - Latent Graph:**
+- Force-directed layout (ForceAtlas2) starting from UMAP positions
+- Click latent to add to cluster (highlighted in red)
+- Hover for latent popup with examples
+- Edge weight controls (max edges/node, threshold)
+- Pan/zoom navigation
+
+**Right Panel - Point Cloud:**
+- 12 2D scatter plots showing adjacent PC pairs (1-2, 2-3, ..., 12-13)
+- 2 3D interactive scatter plots (PCs 1-3 and 4-6)
+- Updates when cluster changes
+- Shows variance explained
+
+**Footer - Cluster Management:**
+- Cluster chips showing selected latents
+- Search to add latent by ID
+- Save/load clusters to localStorage
+
+**Requirements:**
+- Backend must be running for PCA computation
+- `edges.json` must exist (run pipeline with `--force` to regenerate)
+
+```bash
+# Start backend (in one terminal)
+cd backend
+DATA_ROOT=../data uvicorn main:app --port 8000
+
+# Serve frontend (in another terminal)
+cd visualizer
+python -m http.server 8080
+
+# Open http://localhost:8080/graph.html
+```
 
 ## Data Format
 
@@ -244,17 +284,18 @@ experiments/{experiment_id}/
 └── visualizer/                 # Web visualizer data
     ├── index.json             # Latent metadata
     ├── positions.json         # UMAP positions for web
+    ├── edges.json             # Edges for graph visualizer
     └── latents/
         └── *.json             # Per-latent examples
 ```
 
-## Planned: Full Graph Interface
+## Backend Architecture
 
-Architecture for the full interactive application (not yet built):
+The FastAPI backend (`backend/`) provides API endpoints for point cloud computation:
 
 ```
 ┌─────────────────────┐     ┌─────────────────────┐
-│   React Frontend    │────▶│   FastAPI Backend   │
+│   HTML/JS Frontend  │────▶│   FastAPI Backend   │
 │   (sigma.js graph)  │     │   (Python)          │
 │   (Plotly.js plots) │◀────│                     │
 └─────────────────────┘     └──────────┬──────────┘
@@ -267,15 +308,22 @@ Architecture for the full interactive application (not yet built):
                             └─────────────────────┘
 ```
 
-### API Endpoints (Planned)
+### API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/api/experiments` | GET | List available experiments |
+| `/api/metadata` | GET | Get experiment metadata |
 | `/api/graph` | GET | Returns node positions |
 | `/api/edges` | GET | Returns edges (type=cosine\|jaccard) |
 | `/api/latent/{id}` | GET | Returns latent's token data |
-| `/api/cluster/cloud` | POST | Returns point cloud for cluster |
+| `/api/cluster/set` | POST | Set cluster latents |
+| `/api/cluster/add` | POST | Add latent to cluster |
+| `/api/cluster/remove` | POST | Remove latent from cluster |
 | `/api/cluster/pca` | POST | Returns PCA projection |
+| `/api/cluster/info` | GET | Get cluster info |
+
+All endpoints accept `experiment_id` parameter to support multiple experiments.
 
 ### Point Cloud Generation (Incremental)
 

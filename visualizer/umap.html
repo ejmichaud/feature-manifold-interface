@@ -103,13 +103,9 @@
             position: relative;
             overflow: hidden;
             background: #fafafa;
-        }
-
-        #umap-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            cursor: crosshair;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .umap-hint {
@@ -121,6 +117,8 @@
             background: rgba(255,255,255,0.9);
             padding: 4px 8px;
             border-radius: 4px;
+            z-index: 10;
+            pointer-events: none;
         }
 
         .key {
@@ -428,6 +426,8 @@
             display: none;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/graphology@0.25.4/dist/graphology.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sigma@2.4.0/build/sigma.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -444,12 +444,12 @@
                 </div>
             </div>
             <div class="umap-canvas-container" id="umap-container">
-                <canvas id="umap-canvas"></canvas>
+                <div id="sigma-container" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
                 <div class="umap-tooltip" id="umap-tooltip"></div>
                 <div class="umap-hint">
                     <span class="key">Click</span> select
                     <span class="key">Drag</span> pan
-                    <span class="key">Scroll</span> zoom
+                    <span class="key">Scroll/Pinch</span> zoom
                 </div>
             </div>
         </div>
@@ -484,8 +484,11 @@
 
     <script>
         // Configuration
-        const EXPERIMENTS_ROOT = '../data/experiments';
-        const MANIFEST_URL = '../data/experiments.json';
+        // Data root can be set via ?dataRoot= URL param (default: ../data)
+        const _urlParams = new URLSearchParams(window.location.search);
+        const DATA_ROOT = _urlParams.get('dataRoot') || '../data';
+        const EXPERIMENTS_ROOT = `${DATA_ROOT}/experiments`;
+        const MANIFEST_URL = `${DATA_ROOT}/experiments.json`;
         let DATA_DIR = null;  // Set when experiment is selected
 
         // State
@@ -508,27 +511,12 @@
             { key: 'low', title: 'Low Activations', range: '10-40%' },
         ];
 
-        // UMAP view state
-        let viewTransform = { x: 0, y: 0, scale: 1 };
-        let isDragging = false;
-        let dragStart = { x: 0, y: 0 };
-        let dataBounds = { minX: 0, maxX: 1, minY: 0, maxY: 1 };
-
-        // Canvas
-        let canvas, ctx;
-        const POINT_RADIUS = 2;
-        const SELECTED_RADIUS = 6;
+        // Sigma.js state
+        let sigmaRenderer = null;
+        let sigmaGraph = null;
 
         // Initialize
         async function init() {
-            canvas = document.getElementById('umap-canvas');
-            ctx = canvas.getContext('2d');
-
-            setupCanvasEvents();
-            resizeCanvas();
-            window.addEventListener('resize', resizeCanvas);
-
-            // Load experiments manifest
             await loadExperiments();
         }
 
@@ -616,9 +604,8 @@
                 document.getElementById('latent-range').textContent = `/ ${maxLatent.toLocaleString()}`;
                 document.getElementById('latent-input').max = maxLatent;
 
-                // Compute data bounds
-                computeBounds();
-                resetView();
+                // Create sigma.js scatter plot
+                initSigma();
 
                 // Reset examples panel
                 document.getElementById('examples-container').innerHTML =
@@ -635,250 +622,73 @@
             }
         }
 
-        function computeBounds() {
-            if (!positions || !positions.length) return;
-
-            dataBounds.minX = Infinity;
-            dataBounds.maxX = -Infinity;
-            dataBounds.minY = Infinity;
-            dataBounds.maxY = -Infinity;
-
-            for (const [x, y] of positions) {
-                dataBounds.minX = Math.min(dataBounds.minX, x);
-                dataBounds.maxX = Math.max(dataBounds.maxX, x);
-                dataBounds.minY = Math.min(dataBounds.minY, y);
-                dataBounds.maxY = Math.max(dataBounds.maxY, y);
+        function initSigma() {
+            // Clean up previous renderer
+            if (sigmaRenderer) {
+                sigmaRenderer.kill();
+                sigmaRenderer = null;
             }
 
-            // Add padding
-            const padX = (dataBounds.maxX - dataBounds.minX) * 0.05;
-            const padY = (dataBounds.maxY - dataBounds.minY) * 0.05;
-            dataBounds.minX -= padX;
-            dataBounds.maxX += padX;
-            dataBounds.minY -= padY;
-            dataBounds.maxY += padY;
+            if (!positions || !positions.length) return;
+
+            const container = document.getElementById('sigma-container');
+
+            // Build graphology graph with nodes at UMAP positions
+            sigmaGraph = new graphology.Graph();
+            const nodes = positions.map((pos, i) => ({
+                key: String(i),
+                attributes: {
+                    x: pos[0],
+                    y: pos[1],
+                    size: 2,
+                    color: '#999',
+                    label: '',
+                },
+            }));
+            sigmaGraph.import({ nodes });
+
+            // Create sigma renderer (WebGL — handles zoom/pan natively)
+            sigmaRenderer = new Sigma(sigmaGraph, container, {
+                renderLabels: false,
+                labelRenderedSizeThreshold: Infinity,
+                defaultNodeColor: '#999',
+                nodeReducer: (node, data) => {
+                    if (parseInt(node) === currentLatent) {
+                        return { ...data, color: '#ff4500', size: 5 };
+                    }
+                    return data;
+                },
+            });
+
+            // Click to select latent
+            sigmaRenderer.on('clickNode', ({ node }) => {
+                selectLatent(parseInt(node));
+            });
+
+            // Hover tooltip
+            sigmaRenderer.on('enterNode', ({ node }) => {
+                const latentId = parseInt(node);
+                const info = indexData?.latents?.[latentId.toString()];
+                const label = info?.label ? `"${info.label}"` : '';
+
+                const tooltip = document.getElementById('umap-tooltip');
+                tooltip.textContent = `Latent ${latentId} ${label}`;
+
+                const nodeDisplay = sigmaRenderer.getNodeDisplayData(node);
+                tooltip.style.left = (nodeDisplay.x + 10) + 'px';
+                tooltip.style.top = (nodeDisplay.y - 25) + 'px';
+                tooltip.style.display = 'block';
+            });
+
+            sigmaRenderer.on('leaveNode', () => {
+                document.getElementById('umap-tooltip').style.display = 'none';
+            });
         }
 
         function resetView() {
-            if (!positions) return;
-
-            const container = document.getElementById('umap-container');
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-
-            const dataWidth = dataBounds.maxX - dataBounds.minX;
-            const dataHeight = dataBounds.maxY - dataBounds.minY;
-
-            const scaleX = width / dataWidth;
-            const scaleY = height / dataHeight;
-            viewTransform.scale = Math.min(scaleX, scaleY) * 0.95;
-
-            // Center the view
-            viewTransform.x = width / 2 - (dataBounds.minX + dataWidth / 2) * viewTransform.scale;
-            viewTransform.y = height / 2 - (dataBounds.minY + dataHeight / 2) * viewTransform.scale;
-
-            render();
-        }
-
-        function resizeCanvas() {
-            const container = document.getElementById('umap-container');
-            const dpr = window.devicePixelRatio || 1;
-
-            canvas.width = container.clientWidth * dpr;
-            canvas.height = container.clientHeight * dpr;
-            canvas.style.width = container.clientWidth + 'px';
-            canvas.style.height = container.clientHeight + 'px';
-
-            ctx.scale(dpr, dpr);
-
-            if (positions) {
-                render();
+            if (sigmaRenderer) {
+                sigmaRenderer.getCamera().animatedReset();
             }
-        }
-
-        function dataToScreen(x, y) {
-            return {
-                x: x * viewTransform.scale + viewTransform.x,
-                y: y * viewTransform.scale + viewTransform.y
-            };
-        }
-
-        function screenToData(x, y) {
-            return {
-                x: (x - viewTransform.x) / viewTransform.scale,
-                y: (y - viewTransform.y) / viewTransform.scale
-            };
-        }
-
-        function render() {
-            if (!positions) return;
-
-            const width = canvas.clientWidth;
-            const height = canvas.clientHeight;
-
-            // Clear
-            ctx.fillStyle = '#fafafa';
-            ctx.fillRect(0, 0, width, height);
-
-            // Draw points
-            ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
-
-            for (let i = 0; i < positions.length; i++) {
-                if (i === currentLatent) continue; // Draw selected last
-
-                const [x, y] = positions[i];
-                const screen = dataToScreen(x, y);
-
-                // Skip if off-screen
-                if (screen.x < -10 || screen.x > width + 10 ||
-                    screen.y < -10 || screen.y > height + 10) continue;
-
-                ctx.beginPath();
-                ctx.arc(screen.x, screen.y, POINT_RADIUS, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // Draw selected point
-            if (currentLatent !== null && positions[currentLatent]) {
-                const [x, y] = positions[currentLatent];
-                const screen = dataToScreen(x, y);
-
-                // Outer ring
-                ctx.strokeStyle = '#ff4500';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(screen.x, screen.y, SELECTED_RADIUS, 0, Math.PI * 2);
-                ctx.stroke();
-
-                // Inner fill
-                ctx.fillStyle = '#ff4500';
-                ctx.beginPath();
-                ctx.arc(screen.x, screen.y, POINT_RADIUS + 1, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-
-        function setupCanvasEvents() {
-            canvas.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                dragStart = { x: e.offsetX, y: e.offsetY };
-                canvas.style.cursor = 'grabbing';
-            });
-
-            canvas.addEventListener('mousemove', (e) => {
-                if (isDragging) {
-                    const dx = e.offsetX - dragStart.x;
-                    const dy = e.offsetY - dragStart.y;
-                    viewTransform.x += dx;
-                    viewTransform.y += dy;
-                    dragStart = { x: e.offsetX, y: e.offsetY };
-                    render();
-                } else {
-                    // Hover detection
-                    updateHover(e.offsetX, e.offsetY);
-                }
-            });
-
-            canvas.addEventListener('mouseup', (e) => {
-                if (isDragging) {
-                    const dx = Math.abs(e.offsetX - dragStart.x);
-                    const dy = Math.abs(e.offsetY - dragStart.y);
-
-                    // If barely moved, treat as click
-                    if (dx < 5 && dy < 5) {
-                        handleClick(e.offsetX, e.offsetY);
-                    }
-                }
-                isDragging = false;
-                canvas.style.cursor = 'crosshair';
-            });
-
-            canvas.addEventListener('mouseleave', () => {
-                isDragging = false;
-                canvas.style.cursor = 'crosshair';
-                hideTooltip();
-            });
-
-            canvas.addEventListener('wheel', (e) => {
-                e.preventDefault();
-
-                const mouseX = e.offsetX;
-                const mouseY = e.offsetY;
-
-                // Zoom toward mouse position
-                const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-                const newScale = viewTransform.scale * zoomFactor;
-
-                // Limit zoom
-                if (newScale < 0.1 || newScale > 100) return;
-
-                // Adjust position to zoom toward mouse
-                viewTransform.x = mouseX - (mouseX - viewTransform.x) * zoomFactor;
-                viewTransform.y = mouseY - (mouseY - viewTransform.y) * zoomFactor;
-                viewTransform.scale = newScale;
-
-                render();
-            });
-
-            canvas.addEventListener('click', (e) => {
-                // Handled in mouseup for drag detection
-            });
-        }
-
-        function findNearestLatent(screenX, screenY) {
-            if (!positions) return null;
-
-            let nearest = null;
-            let minDist = Infinity;
-            const threshold = 20; // pixels
-
-            for (let i = 0; i < positions.length; i++) {
-                const [x, y] = positions[i];
-                const screen = dataToScreen(x, y);
-
-                const dist = Math.sqrt(
-                    (screen.x - screenX) ** 2 +
-                    (screen.y - screenY) ** 2
-                );
-
-                if (dist < minDist && dist < threshold) {
-                    minDist = dist;
-                    nearest = i;
-                }
-            }
-
-            return nearest;
-        }
-
-        function handleClick(screenX, screenY) {
-            const latentId = findNearestLatent(screenX, screenY);
-            if (latentId !== null) {
-                selectLatent(latentId);
-            }
-        }
-
-        function updateHover(screenX, screenY) {
-            const latentId = findNearestLatent(screenX, screenY);
-            const tooltip = document.getElementById('umap-tooltip');
-
-            if (latentId !== null) {
-                const info = indexData?.latents?.[latentId.toString()];
-                const label = info?.label ? `"${info.label}"` : '';
-                tooltip.textContent = `Latent ${latentId} ${label}`;
-                tooltip.style.left = (screenX + 10) + 'px';
-                tooltip.style.top = (screenY - 25) + 'px';
-                tooltip.style.display = 'block';
-                canvas.style.cursor = 'pointer';
-            } else {
-                hideTooltip();
-                if (!isDragging) {
-                    canvas.style.cursor = 'crosshair';
-                }
-            }
-        }
-
-        function hideTooltip() {
-            document.getElementById('umap-tooltip').style.display = 'none';
         }
 
         // Latent selection and display
@@ -906,7 +716,7 @@
             document.getElementById('loading-indicator').style.display = 'inline-block';
 
             // Re-render UMAP to show selection
-            render();
+            if (sigmaRenderer) sigmaRenderer.refresh();
 
             // Load and display examples
             try {

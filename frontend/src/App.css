@@ -1,0 +1,318 @@
+/* Feature Manifold Interface Styles */
+
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #0f3460;
+  --text-primary: #eee;
+  --text-secondary: #aaa;
+  --accent: #4a90d9;
+  --accent-hover: #5da0e9;
+  --highlight: #ff6b6b;
+  --border: #2a3a5e;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header h1 {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.header-controls {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.header-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.header-controls select {
+  padding: 0.25rem 0.5rem;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.header-controls input[type="range"] {
+  width: 100px;
+}
+
+/* Main content */
+.app-main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.left-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  min-width: 400px;
+}
+
+.right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-width: 500px;
+}
+
+/* Graph View */
+.graph-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.graph-info {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: rgba(26, 26, 46, 0.8);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.graph-container {
+  flex: 1;
+  background-color: var(--bg-primary);
+}
+
+.graph-view.loading,
+.graph-view.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Point Cloud View */
+.point-cloud-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+}
+
+.point-cloud-header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.subsampled-badge {
+  font-size: 0.75rem;
+  color: var(--highlight);
+}
+
+.point-cloud-view.empty,
+.point-cloud-view.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.plots-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+}
+
+.plots-3d {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  min-height: 300px;
+}
+
+.plot-3d {
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  min-height: 250px;
+}
+
+.plots-2d {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+.plot-2d {
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  aspect-ratio: 1;
+  min-height: 150px;
+}
+
+/* Cluster Panel */
+.app-footer {
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  padding: 0.5rem 1rem;
+}
+
+.cluster-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cluster-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cluster-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.clear-button {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  background-color: transparent;
+  color: var(--highlight);
+  border: 1px solid var(--highlight);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.clear-button:hover {
+  background-color: var(--highlight);
+  color: white;
+}
+
+.clear-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cluster-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 32px;
+}
+
+.empty-hint {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.latent-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background-color: var(--accent);
+  border-radius: 16px;
+  font-size: 0.75rem;
+}
+
+.chip-label {
+  color: white;
+}
+
+.chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.chip-remove:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.chip-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cluster-loading {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.error-banner {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background-color: rgba(255, 107, 107, 0.2);
+  color: var(--highlight);
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+/* Loading states */
+.loading-spinner {
+  color: var(--text-secondary);
+}
+
+/* Plotly overrides for dark theme */
+.js-plotly-plot .plotly .modebar {
+  background: var(--bg-secondary) !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn svg {
+  fill: var(--text-secondary) !important;
+}

@@ -5,49 +5,101 @@ Provides API endpoints for:
 - Graph data (positions, edges)
 - Latent data (token indices, activations)
 - Cluster operations (point cloud generation, PCA)
+
+Supports multiple experiments - specify experiment_id in API requests.
 """
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import graph, cluster
 from services.data_loader import DataLoader
 
 
-# Global data loader instance
-data_loader: DataLoader | None = None
+def get_experiments_root() -> Path:
+    """Get experiments root directory from environment or default."""
+    data_root = os.environ.get("DATA_ROOT", "../data")
+    return Path(data_root) / "experiments"
 
 
-def get_data_dir() -> Path:
-    """Get data directory from environment or default."""
-    import os
-    data_dir = os.environ.get("DATA_DIR", "../data")
-    return Path(data_dir)
+class ExperimentManager:
+    """Manages DataLoader instances for multiple experiments."""
+
+    def __init__(self, experiments_root: Path):
+        self.experiments_root = experiments_root
+        self._loaders: dict[str, DataLoader] = {}
+
+    def list_experiments(self) -> list[str]:
+        """List available experiment IDs."""
+        if not self.experiments_root.exists():
+            return []
+        return [
+            d.name for d in self.experiments_root.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        ]
+
+    async def get_loader(self, experiment_id: str) -> DataLoader:
+        """Get or create DataLoader for an experiment."""
+        if experiment_id in self._loaders:
+            return self._loaders[experiment_id]
+
+        exp_dir = self.experiments_root / experiment_id
+        if not exp_dir.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Experiment '{experiment_id}' not found"
+            )
+
+        print(f"Loading experiment: {experiment_id}...")
+        loader = DataLoader(exp_dir)
+        await loader.load()
+        print(f"  Loaded: {loader.n_latents} latents, {loader.d_model} dimensions")
+
+        self._loaders[experiment_id] = loader
+        return loader
+
+    def clear_cache(self):
+        """Clear all cached loaders."""
+        self._loaders.clear()
+
+
+# Global experiment manager
+experiment_manager: ExperimentManager | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load data on startup, cleanup on shutdown."""
-    global data_loader
+    """Initialize experiment manager on startup."""
+    global experiment_manager
 
-    data_dir = get_data_dir()
-    print(f"Loading data from {data_dir}...")
+    experiments_root = get_experiments_root()
+    print(f"Experiments root: {experiments_root}")
 
-    data_loader = DataLoader(data_dir)
-    await data_loader.load()
+    experiment_manager = ExperimentManager(experiments_root)
+    experiments = experiment_manager.list_experiments()
+    print(f"Found {len(experiments)} experiments: {experiments}")
 
-    print(f"Data loaded: {data_loader.n_latents} latents, {data_loader.d_model} dimensions")
+    # Make manager available to routers
+    app.state.experiment_manager = experiment_manager
 
-    # Make data_loader available to routers
-    app.state.data_loader = data_loader
+    # For backwards compatibility, pre-load first experiment if only one exists
+    if len(experiments) == 1:
+        loader = await experiment_manager.get_loader(experiments[0])
+        app.state.data_loader = loader
+        app.state.default_experiment = experiments[0]
+    else:
+        app.state.data_loader = None
+        app.state.default_experiment = experiments[0] if experiments else None
 
     yield
 
     # Cleanup
     print("Shutting down...")
+    experiment_manager.clear_cache()
 
 
 app = FastAPI(
@@ -60,7 +112,7 @@ app = FastAPI(
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,12 +129,35 @@ async def root():
     return {"status": "ok", "service": "feature-manifold-interface"}
 
 
-@app.get("/api/metadata")
-async def get_metadata():
-    """Get dataset metadata."""
-    dl = app.state.data_loader
+@app.get("/api/experiments")
+async def list_experiments():
+    """List available experiments."""
+    manager = app.state.experiment_manager
+    experiments = manager.list_experiments()
     return {
-        "n_latents": dl.n_latents,
-        "d_model": dl.d_model,
-        "metadata": dl.metadata,
+        "experiments": experiments,
+        "default": app.state.default_experiment,
+    }
+
+
+@app.get("/api/metadata")
+async def get_metadata(experiment_id: str | None = None):
+    """Get dataset metadata for an experiment."""
+    manager = app.state.experiment_manager
+
+    # Use default experiment if not specified
+    if experiment_id is None:
+        experiment_id = app.state.default_experiment
+        if experiment_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No experiment specified and no default available"
+            )
+
+    loader = await manager.get_loader(experiment_id)
+    return {
+        "experiment_id": experiment_id,
+        "n_latents": loader.n_latents,
+        "d_model": loader.d_model,
+        "metadata": loader.metadata,
     }

@@ -416,6 +416,150 @@
             outline: none;
             border-color: #ff4500;
         }
+
+        /* Search */
+        .search-container {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .search-input {
+            width: 200px;
+            height: 32px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 0 8px;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #ff4500;
+        }
+
+        .search-input::placeholder {
+            color: #bbb;
+        }
+
+        .search-status {
+            font-size: 10px;
+            color: #999;
+            white-space: nowrap;
+        }
+
+        /* Search results panel */
+        .search-results-panel {
+            position: sticky;
+            top: 57px;
+            background: white;
+            border-bottom: 2px solid #ff4500;
+            max-height: 60vh;
+            overflow-y: auto;
+            z-index: 99;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .search-results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 20px;
+            background: #f8f8f8;
+            border-bottom: 1px solid #eee;
+            font-size: 11px;
+            color: #666;
+            position: sticky;
+            top: 0;
+        }
+
+        .search-close-btn {
+            background: none;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            color: #999;
+            padding: 2px 6px;
+        }
+
+        .search-close-btn:hover {
+            color: #333;
+        }
+
+        .search-results-list {
+            padding: 2px 0;
+        }
+
+        .search-result {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 20px;
+            cursor: pointer;
+            border-bottom: 1px solid #f5f5f5;
+            transition: background 0.1s;
+        }
+
+        .search-result:hover {
+            background: #fff5f0;
+        }
+
+        .search-result-id {
+            font-weight: 600;
+            color: #333;
+            min-width: 55px;
+            font-size: 12px;
+        }
+
+        .search-result-label {
+            background: #ff4500;
+            color: white;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .search-result-token {
+            background: #e8e8e8;
+            color: #333;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .search-result-badge {
+            font-size: 9px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .search-result-badge.label-match {
+            color: #ff4500;
+        }
+
+        .search-result-stats {
+            font-size: 11px;
+            color: #999;
+            margin-left: auto;
+            white-space: nowrap;
+        }
+
+        .search-no-results {
+            padding: 20px;
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -423,6 +567,11 @@
         <select class="experiment-select" id="experiment-select" onchange="switchExperiment(this.value)">
             <option value="">Loading experiments...</option>
         </select>
+
+        <div class="search-container">
+            <input type="text" class="search-input" id="search-input" placeholder="Search latents..." />
+            <span class="search-status" id="search-status"></span>
+        </div>
 
         <div class="nav-controls">
             <button class="nav-btn" onclick="prevLatent()" title="Previous (←)">‹</button>
@@ -450,7 +599,16 @@
         <div class="keyboard-hints">
             <span class="key">←</span><span class="key">→</span> navigate
             <span class="key">g</span> go to
+            <span class="key">/</span> search
         </div>
+    </div>
+
+    <div class="search-results-panel" id="search-results" style="display: none;">
+        <div class="search-results-header">
+            <span id="search-results-count"></span>
+            <button class="search-close-btn" onclick="closeSearch()">&times;</button>
+        </div>
+        <div class="search-results-list" id="search-results-list"></div>
     </div>
 
     <div class="main">
@@ -460,8 +618,12 @@
 
     <script>
         // Configuration
-        const EXPERIMENTS_ROOT = '../data/experiments';
-        const MANIFEST_URL = '../data/experiments.json';
+        // Data root can be set via ?dataRoot= URL param (default: ../data)
+        const _urlParams = new URLSearchParams(window.location.search);
+        const DATA_ROOT = _urlParams.get('dataRoot') || '../data';
+        const EXPERIMENTS_ROOT = `${DATA_ROOT}/experiments`;
+        const MANIFEST_URL = `${DATA_ROOT}/experiments.json`;
+        const EMBED_MODE = _urlParams.get('embed') === 'true';
         let DATA_DIR = null;  // Set when experiment is selected
 
         // State
@@ -474,6 +636,11 @@
         let latentCache = new Map();  // Cache for loaded latent data
         const CACHE_SIZE = 50;  // Max latents to keep in cache
         let useLogScale = false;
+
+        // Search state
+        let searchIndex = null;        // Loaded from search_index.json
+        let searchIndexLoading = false;
+        let searchDebounceTimer = null;
 
         // Percentile section config
         const SECTIONS = [
@@ -540,6 +707,10 @@
             indexData = null;
             currentLatent = 0;
             latentCache.clear();
+            searchIndex = null;
+            searchIndexLoading = false;
+            closeSearch();
+            document.getElementById('search-input').value = '';
 
             // Reset UI
             document.getElementById('content').innerHTML = '<div class="loading">Loading experiment...</div>';
@@ -557,8 +728,12 @@
                 document.getElementById('latent-range').textContent = `/ ${maxLatent.toLocaleString()}`;
                 document.getElementById('latent-input').max = maxLatent;
 
-                // Load first latent
-                loadLatent(0);
+                // Load search index in background
+                loadSearchIndex();
+
+                // Load initial latent (from URL param or default to 0)
+                const latentParam = _urlParams.get('latent');
+                loadLatent(latentParam !== null ? (parseInt(latentParam) || 0) : 0);
             } catch (error) {
                 document.getElementById('content').innerHTML =
                     `<div class="error">
@@ -903,12 +1078,205 @@
             loadLatent(parseInt(input.value) || 0);
         }
 
+        // ─── Search ───────────────────────────────────────────
+
+        async function loadSearchIndex() {
+            if (searchIndex || searchIndexLoading || !DATA_DIR) return;
+
+            searchIndexLoading = true;
+            const statusEl = document.getElementById('search-status');
+            statusEl.textContent = 'loading token index...';
+
+            try {
+                const response = await fetch(`${DATA_DIR}/search_index.json`);
+                if (response.ok) {
+                    searchIndex = await response.json();
+                    statusEl.textContent = '';
+                    // Re-run current search if input has text
+                    const q = document.getElementById('search-input').value;
+                    if (q) doSearch(q);
+                } else {
+                    statusEl.textContent = 'labels only';
+                }
+            } catch (e) {
+                console.log('Search index not available, using label search only');
+                statusEl.textContent = 'labels only';
+            }
+            searchIndexLoading = false;
+        }
+
+        function searchLatents(query) {
+            if (!query || !indexData) return [];
+
+            const q = query.toLowerCase().trim();
+            if (!q) return [];
+
+            const results = [];
+            const seen = new Set();
+
+            // 1. Label search (from indexData - always available)
+            for (const [id, info] of Object.entries(indexData.latents)) {
+                if (info.label && info.label.toLowerCase().includes(q)) {
+                    const lid = parseInt(id);
+                    results.push({
+                        latent_id: lid,
+                        label: info.label,
+                        total_firings: info.total_firings || 0,
+                        match_type: 'label',
+                        matched_token: info.label,
+                    });
+                    seen.add(lid);
+                }
+            }
+
+            // 2. Token search (from search index - if loaded)
+            if (searchIndex && searchIndex.tokens) {
+                // Track how many matching tokens each latent has for ranking
+                const latentMatchCount = new Map();
+                const latentFirstMatch = new Map();
+
+                for (const [token, latent_ids] of Object.entries(searchIndex.tokens)) {
+                    if (token.toLowerCase().includes(q)) {
+                        for (const lid of latent_ids) {
+                            if (!seen.has(lid)) {
+                                latentMatchCount.set(lid, (latentMatchCount.get(lid) || 0) + 1);
+                                if (!latentFirstMatch.has(lid)) {
+                                    latentFirstMatch.set(lid, token);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Add token-matched latents
+                for (const [lid, count] of latentMatchCount) {
+                    const info = indexData.latents[lid.toString()] || {};
+                    results.push({
+                        latent_id: lid,
+                        label: info.label || '',
+                        total_firings: info.total_firings || 0,
+                        match_type: 'token',
+                        matched_token: latentFirstMatch.get(lid),
+                        match_count: count,
+                    });
+                    seen.add(lid);
+                }
+            }
+
+            // Sort: label matches first, then by total_firings
+            results.sort((a, b) => {
+                if (a.match_type !== b.match_type) {
+                    return a.match_type === 'label' ? -1 : 1;
+                }
+                return b.total_firings - a.total_firings;
+            });
+
+            return results;
+        }
+
+        function renderSearchResults(results, query) {
+            const panel = document.getElementById('search-results');
+            const list = document.getElementById('search-results-list');
+            const countEl = document.getElementById('search-results-count');
+
+            if (results.length === 0) {
+                if (query && query.trim()) {
+                    panel.style.display = 'block';
+                    const indexNote = searchIndex ? '' : ' (label search only)';
+                    countEl.textContent = `No matches${indexNote}`;
+                    list.innerHTML = '<div class="search-no-results">No latents found</div>';
+                } else {
+                    panel.style.display = 'none';
+                }
+                return;
+            }
+
+            const maxResults = 200;
+            const shown = results.slice(0, maxResults);
+            const nLabels = results.filter(r => r.match_type === 'label').length;
+            const nTokens = results.length - nLabels;
+
+            let countParts = [];
+            if (nLabels > 0) countParts.push(`${nLabels} label`);
+            if (nTokens > 0) countParts.push(`${nTokens} token`);
+            const total = results.length > maxResults
+                ? `${maxResults} of ${results.length.toLocaleString()}`
+                : `${results.length}`;
+            countEl.textContent = `${total} match${results.length !== 1 ? 'es' : ''} (${countParts.join(', ')})`;
+
+            list.innerHTML = shown.map(r => {
+                const labelHtml = r.label
+                    ? `<span class="search-result-label">&quot;${escapeHtml(r.label)}&quot;</span>`
+                    : '';
+
+                const tokenHtml = r.match_type === 'token' && r.matched_token !== r.label
+                    ? `<span class="search-result-token">&quot;${escapeHtml(r.matched_token)}&quot;</span>`
+                    : '';
+
+                const badgeClass = r.match_type === 'label' ? 'label-match' : '';
+                const badgeText = r.match_type === 'label' ? 'label' : 'token';
+
+                return `
+                    <div class="search-result" onclick="navigateToLatent(${r.latent_id})">
+                        <span class="search-result-id">${r.latent_id}</span>
+                        ${labelHtml}
+                        ${tokenHtml}
+                        <span class="search-result-badge ${badgeClass}">${badgeText}</span>
+                        <span class="search-result-stats">${r.total_firings.toLocaleString()} firings</span>
+                    </div>
+                `;
+            }).join('');
+
+            panel.style.display = 'block';
+        }
+
+        function doSearch(query) {
+            const results = searchLatents(query);
+            renderSearchResults(results, query);
+        }
+
+        function navigateToLatent(id) {
+            closeSearch();
+            document.getElementById('search-input').value = '';
+            loadLatent(id);
+        }
+
+        function closeSearch() {
+            document.getElementById('search-results').style.display = 'none';
+        }
+
+        function handleSearchInput(e) {
+            const query = e.target.value;
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => {
+                if (!query || !query.trim()) {
+                    closeSearch();
+                    return;
+                }
+                doSearch(query);
+            }, 150);
+        }
+
         // Keyboard navigation
         document.addEventListener('keydown', (e) => {
-            // Don't intercept if typing in input
-            if (e.target.tagName === 'INPUT') {
+            // Handle search input separately
+            if (e.target.id === 'search-input') {
+                if (e.key === 'Escape') {
+                    closeSearch();
+                    e.target.value = '';
+                    e.target.blur();
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            // Don't intercept if typing in other inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
                 if (e.key === 'Enter') {
                     goToLatent();
+                    e.target.blur();
+                }
+                if (e.key === 'Escape') {
                     e.target.blur();
                 }
                 return;
@@ -932,6 +1300,14 @@
                     toggleLogScale();
                     e.preventDefault();
                     break;
+                case '/':
+                    document.getElementById('search-input').focus();
+                    document.getElementById('search-input').select();
+                    e.preventDefault();
+                    break;
+                case 'Escape':
+                    closeSearch();
+                    break;
             }
         });
 
@@ -940,6 +1316,15 @@
 
         // Histogram click to toggle log scale
         document.getElementById('histogram-container').addEventListener('click', toggleLogScale);
+
+        // Search input handler
+        document.getElementById('search-input').addEventListener('input', handleSearchInput);
+
+        // Embed mode: hide header for iframe embedding
+        if (EMBED_MODE) {
+            document.querySelector('.header').style.display = 'none';
+            document.getElementById('search-results').style.display = 'none';
+        }
 
         // Load experiments on page load
         loadExperiments();

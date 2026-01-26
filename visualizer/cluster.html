@@ -1,0 +1,1739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAE Cluster Explorer</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+            background: #fafafa;
+            color: #1a1a1a;
+            font-size: 13px;
+            line-height: 1.5;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Layout */
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 10px 16px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            z-index: 100;
+            flex-shrink: 0;
+        }
+
+        .header-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .left-panel {
+            width: 45%;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e0e0e0;
+            background: white;
+            overflow: hidden;
+        }
+
+        .right-panel {
+            width: 55%;
+            display: flex;
+            flex-direction: column;
+            background: #fafafa;
+            overflow: hidden;
+        }
+
+        /* Experiment select */
+        .experiment-select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 12px;
+            background: white;
+            color: #333;
+            max-width: 300px;
+            cursor: pointer;
+        }
+
+        .experiment-select:hover { border-color: #ff4500; }
+        .experiment-select:focus { outline: none; border-color: #ff4500; }
+
+        /* Backend status */
+        .backend-status {
+            font-size: 10px;
+            margin-left: auto;
+        }
+
+        .backend-status.connected { color: #2e7d32; }
+        .backend-status.disconnected { color: #cc0000; }
+
+        .backend-status::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .backend-status.connected::before { background: #4caf50; }
+        .backend-status.disconnected::before { background: #cc0000; }
+
+        /* Keyboard hints */
+        .keyboard-hints {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .key {
+            display: inline-block;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 1px 5px;
+            font-size: 10px;
+            margin: 0 2px;
+        }
+
+        /* Search section */
+        .search-section {
+            position: relative;
+            padding: 10px 14px;
+            border-bottom: 1px solid #e0e0e0;
+            flex-shrink: 0;
+        }
+
+        .search-input {
+            width: 100%;
+            height: 32px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 0 10px;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #ff4500;
+        }
+
+        .search-input::placeholder { color: #bbb; }
+
+        .search-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .search-status {
+            font-size: 10px;
+            color: #999;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .search-results-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-top: 2px solid #ff4500;
+            max-height: 50vh;
+            overflow-y: auto;
+            z-index: 50;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .search-results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 14px;
+            background: #f8f8f8;
+            border-bottom: 1px solid #eee;
+            font-size: 11px;
+            color: #666;
+            position: sticky;
+            top: 0;
+        }
+
+        .search-close-btn {
+            background: none;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            color: #999;
+            padding: 2px 6px;
+        }
+
+        .search-close-btn:hover { color: #333; }
+
+        .search-results-list { padding: 2px 0; }
+
+        .search-result {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #f5f5f5;
+            transition: background 0.1s;
+        }
+
+        .search-result:hover { background: #fff5f0; }
+        .search-result.pinned { background: #f5f5f5; }
+
+        .search-result-id {
+            font-weight: 600;
+            color: #333;
+            min-width: 55px;
+            font-size: 12px;
+        }
+
+        .search-result-label {
+            background: #ff4500;
+            color: white;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .search-result-token {
+            background: #e8e8e8;
+            color: #333;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .search-result-badge {
+            font-size: 9px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .search-result-badge.label-match { color: #ff4500; }
+
+        .search-result-stats {
+            font-size: 11px;
+            color: #999;
+            margin-left: auto;
+            white-space: nowrap;
+        }
+
+        .search-no-results {
+            padding: 20px;
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+        }
+
+        /* Preview section */
+        .preview-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 200px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            background: #f8f8f8;
+            border-bottom: 1px solid #eee;
+            flex-shrink: 0;
+        }
+
+        .preview-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .preview-latent-info {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .preview-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 6px;
+        }
+
+        .preview-iframe {
+            flex: 1;
+            width: 100%;
+            border: none;
+            background: #fafafa;
+        }
+
+        .preview-empty {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 12px;
+            font-style: italic;
+            background: #fafafa;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 4px 10px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 11px;
+            color: #666;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            border-color: #ff4500;
+            color: #ff4500;
+        }
+
+        .btn:active { background: #fff5f0; }
+
+        .btn.primary {
+            background: #ff4500;
+            border-color: #ff4500;
+            color: white;
+        }
+
+        .btn.primary:hover {
+            background: #e03e00;
+            border-color: #e03e00;
+            color: white;
+        }
+
+        .btn.primary:disabled {
+            background: #ccc;
+            border-color: #ccc;
+            cursor: default;
+        }
+
+        /* Cluster bar */
+        .cluster-bar {
+            padding: 8px 14px;
+            border-bottom: 1px solid #e0e0e0;
+            background: white;
+            flex-shrink: 0;
+        }
+
+        .cluster-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+
+        .cluster-title {
+            font-weight: 600;
+            font-size: 12px;
+            color: #333;
+        }
+
+        .cluster-count {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .cluster-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .load-select {
+            padding: 3px 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 11px;
+            background: white;
+            color: #666;
+            cursor: pointer;
+        }
+
+        .load-select:hover { border-color: #ff4500; }
+
+        .cluster-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            min-height: 22px;
+        }
+
+        .latent-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: #ff4500;
+            color: white;
+            border-radius: 12px;
+            font-size: 10px;
+            cursor: default;
+        }
+
+        .latent-chip .remove {
+            cursor: pointer;
+            opacity: 0.7;
+            font-size: 12px;
+            line-height: 1;
+        }
+
+        .latent-chip .remove:hover { opacity: 1; }
+
+        .cluster-empty {
+            color: #999;
+            font-style: italic;
+            font-size: 11px;
+        }
+
+        /* Pinned cards area */
+        .pinned-area {
+            flex-shrink: 0;
+            max-height: 30%;
+            overflow-y: auto;
+            padding: 8px 14px;
+            background: #fafafa;
+        }
+
+        .pinned-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .pinned-title {
+            font-weight: 600;
+            font-size: 12px;
+            color: #333;
+        }
+
+        .pinned-count {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .pinned-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 6px;
+        }
+
+        .pinned-empty {
+            text-align: center;
+            padding: 16px;
+            color: #bbb;
+            font-size: 11px;
+            font-style: italic;
+            grid-column: 1 / -1;
+        }
+
+        /* Pinned card */
+        .pinned-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 8px 10px;
+            position: relative;
+            transition: border-color 0.15s;
+        }
+
+        .pinned-card:hover { border-color: #ccc; }
+
+        .pinned-card.in-cluster {
+            border-color: #ff4500;
+            border-width: 2px;
+            padding: 7px 9px;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .card-id {
+            font-weight: 600;
+            font-size: 11px;
+            color: #333;
+        }
+
+        .card-label {
+            background: #ff4500;
+            color: white;
+            padding: 0px 5px;
+            border-radius: 3px;
+            font-size: 10px;
+            max-width: 80px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .card-stats {
+            font-size: 9px;
+            color: #999;
+        }
+
+        .card-actions {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            display: flex;
+            gap: 3px;
+        }
+
+        .card-btn {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            padding: 0;
+        }
+
+        .card-btn:hover {
+            border-color: #ff4500;
+            color: #ff4500;
+        }
+
+        .card-btn.active {
+            background: #ff4500;
+            border-color: #ff4500;
+            color: white;
+        }
+
+        .card-example {
+            font-size: 10px;
+            line-height: 1.3;
+            word-wrap: break-word;
+            padding: 2px 4px;
+            background: #fafafa;
+            border-radius: 2px;
+            margin-top: 3px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Token highlighting */
+        .token { display: inline; border-radius: 2px; }
+        .token.highlighted { padding: 1px 0; }
+
+        .act-1 { background: rgba(255, 69, 0, 0.08); }
+        .act-2 { background: rgba(255, 69, 0, 0.15); }
+        .act-3 { background: rgba(255, 69, 0, 0.25); }
+        .act-4 { background: rgba(255, 69, 0, 0.35); }
+        .act-5 { background: rgba(255, 69, 0, 0.50); }
+        .act-6 { background: rgba(255, 69, 0, 0.65); }
+        .act-7 { background: rgba(255, 69, 0, 0.80); color: white; }
+        .act-8 { background: rgba(255, 69, 0, 0.90); color: white; }
+        .act-9 { background: rgba(255, 69, 0, 1.0); color: white; }
+
+        /* Point cloud (right panel) */
+        .cloud-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            flex-shrink: 0;
+        }
+
+        .cloud-title {
+            font-weight: 600;
+            font-size: 12px;
+            color: #333;
+        }
+
+        .cloud-stats {
+            font-size: 11px;
+            color: #999;
+            margin-left: auto;
+        }
+
+        .cloud-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 6px;
+            gap: 6px;
+        }
+
+        .scatter-grid-2d {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 4px;
+            flex: 3;
+        }
+
+        .scatter-grid-3d {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 4px;
+            flex: 1;
+        }
+
+        .scatter-cell {
+            background: white;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scatter-cell .js-plotly-plot { width: 100% !important; height: 100% !important; }
+
+        .scatter-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ccc;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ddd;
+            border-top-color: #ff4500;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <select class="experiment-select" id="experiment-select" onchange="switchExperiment(this.value)">
+                <option value="">Loading experiments...</option>
+            </select>
+            <span class="header-title">Cluster Explorer</span>
+            <span class="backend-status disconnected" id="backend-status">Checking backend...</span>
+            <div class="keyboard-hints">
+                <span class="key">/</span> search
+                <span class="key">Esc</span> close
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Left Panel: Search + Preview + Cluster + Pinned -->
+            <section class="left-panel">
+                <!-- Search -->
+                <div class="search-section">
+                    <div class="search-bar">
+                        <input type="text" class="search-input" id="search-input"
+                               placeholder="Search latents by label or token..." />
+                        <span class="search-status" id="search-status"></span>
+                    </div>
+                    <div class="search-results-dropdown" id="search-results" style="display: none;">
+                        <div class="search-results-header">
+                            <span id="search-results-count"></span>
+                            <button class="search-close-btn" onclick="closeSearch()">&times;</button>
+                        </div>
+                        <div class="search-results-list" id="search-results-list"></div>
+                    </div>
+                </div>
+
+                <!-- Iframe preview -->
+                <div class="preview-section" id="preview-section">
+                    <div class="preview-header">
+                        <span class="preview-title">Latent Preview</span>
+                        <span class="preview-latent-info" id="preview-latent-info"></span>
+                        <div class="preview-actions">
+                            <button class="btn primary" id="btn-pin" onclick="pinPreviewedLatent()" disabled>
+                                Pin to cluster
+                            </button>
+                        </div>
+                    </div>
+                    <div class="preview-empty" id="preview-empty">
+                        Search for a latent and click a result to preview
+                    </div>
+                    <iframe id="latent-preview" class="preview-iframe" style="display: none;"></iframe>
+                </div>
+
+                <!-- Cluster bar -->
+                <div class="cluster-bar">
+                    <div class="cluster-header">
+                        <span class="cluster-title">Cluster</span>
+                        <span class="cluster-count" id="cluster-count">0 latents</span>
+                        <div class="cluster-actions">
+                            <button class="btn" id="btn-clear" onclick="clearAll()">Clear</button>
+                            <button class="btn" id="btn-save" onclick="saveCluster()">Save</button>
+                            <select class="load-select" id="load-select" onchange="loadCluster(this.value)">
+                                <option value="">Load saved...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="cluster-chips" id="cluster-chips">
+                        <span class="cluster-empty">Search and pin latents to build a cluster</span>
+                    </div>
+                </div>
+
+                <!-- Pinned cards -->
+                <div class="pinned-area" id="pinned-area">
+                    <div class="pinned-header">
+                        <span class="pinned-title">Pinned Latents</span>
+                        <span class="pinned-count" id="pinned-count"></span>
+                    </div>
+                    <div class="pinned-grid" id="pinned-grid">
+                        <div class="pinned-empty" id="pinned-empty">
+                            Pin latents from the preview above
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Point Cloud -->
+            <section class="right-panel">
+                <div class="cloud-header">
+                    <span class="cloud-title">Activation Point Cloud (PCA)</span>
+                    <span class="cloud-stats" id="cloud-stats">
+                        Add latents to cluster to view point cloud
+                    </span>
+                </div>
+                <div class="cloud-container" id="cloud-container">
+                    <div class="scatter-grid-2d" id="scatter-grid-2d"></div>
+                    <div class="scatter-grid-3d" id="scatter-grid-3d"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // ============================================================
+        // Configuration
+        // ============================================================
+        const _urlParams = new URLSearchParams(window.location.search);
+        const DATA_ROOT = _urlParams.get('dataRoot') || '../data';
+        const EXPERIMENTS_ROOT = `${DATA_ROOT}/experiments`;
+        const MANIFEST_URL = `${DATA_ROOT}/experiments.json`;
+        const API_BASE = _urlParams.get('apiBase') || 'http://localhost:8000/api';
+
+        // ============================================================
+        // State
+        // ============================================================
+        const state = {
+            // Experiment
+            experiments: [],
+            currentExperiment: null,
+            dataDir: null,
+
+            // Index data
+            indexData: null,
+            searchIndex: null,
+            searchIndexLoading: false,
+
+            // Preview
+            previewLatentId: null,
+
+            // Pinned latents (ordered)
+            pinnedLatents: [],
+
+            // Cluster (subset of pinned that contribute to point cloud)
+            cluster: new Set(),
+
+            // Latent data cache (for pinned card rendering)
+            latentCache: new Map(),
+            CACHE_SIZE: 100,
+
+            // PCA data
+            pcaData: null,
+            pcaDebounceTimer: null,
+
+            // Saved clusters
+            savedClusters: [],
+
+            // Backend
+            backendConnected: false,
+
+            // Search
+            searchDebounceTimer: null,
+        };
+
+        // ============================================================
+        // Initialization
+        // ============================================================
+        function init() {
+            loadSavedClusters();
+            initScatterPlots();
+            checkBackend();
+            loadExperiments();
+
+            // Event listeners
+            document.getElementById('search-input').addEventListener('input', handleSearchInput);
+
+            // Periodic backend check
+            setInterval(checkBackend, 30000);
+
+            // Plotly resize on window resize
+            let resizeTimer;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    for (let i = 0; i < 12; i++) {
+                        const el = document.getElementById(`scatter-2d-${i}`);
+                        if (el && el.querySelector('.js-plotly-plot')) Plotly.Plots.resize(el);
+                    }
+                    for (let i = 0; i < 2; i++) {
+                        const el = document.getElementById(`scatter-3d-${i}`);
+                        if (el && el.querySelector('.js-plotly-plot')) Plotly.Plots.resize(el);
+                    }
+                }, 200);
+            });
+        }
+
+        // ============================================================
+        // Experiment Loading
+        // ============================================================
+        async function loadExperiments() {
+            const select = document.getElementById('experiment-select');
+
+            try {
+                const response = await fetch(MANIFEST_URL);
+                if (!response.ok) throw new Error('No experiments manifest found');
+
+                const manifest = await response.json();
+                state.experiments = manifest.experiments.filter(e => e.has_visualizer);
+
+                if (state.experiments.length === 0) {
+                    select.innerHTML = '<option value="">No experiments with visualizer data</option>';
+                    return;
+                }
+
+                select.innerHTML = state.experiments.map(exp => {
+                    const label = `Layer ${exp.layer} / ${exp.sae_width} / ${exp.sae_l0}`;
+                    const tokens = exp.num_tokens ? ` (${(exp.num_tokens/1e6).toFixed(0)}M tokens)` : '';
+                    return `<option value="${exp.id}">${label}${tokens}</option>`;
+                }).join('');
+
+                const expParam = _urlParams.get('exp');
+                const defaultExp = expParam && state.experiments.find(e => e.id === expParam)
+                    ? expParam
+                    : state.experiments[0].id;
+
+                select.value = defaultExp;
+                await switchExperiment(defaultExp);
+
+            } catch (error) {
+                console.error('Failed to load experiments:', error);
+                select.innerHTML = '<option value="">Error loading experiments</option>';
+            }
+        }
+
+        async function switchExperiment(experimentId) {
+            if (!experimentId) return;
+
+            state.currentExperiment = state.experiments.find(e => e.id === experimentId);
+            state.dataDir = `${EXPERIMENTS_ROOT}/${experimentId}/visualizer`;
+
+            // Update URL
+            const url = new URL(window.location);
+            url.searchParams.set('exp', experimentId);
+            window.history.replaceState({}, '', url);
+
+            // Reset state
+            state.indexData = null;
+            state.searchIndex = null;
+            state.searchIndexLoading = false;
+            state.previewLatentId = null;
+            state.pinnedLatents = [];
+            state.cluster.clear();
+            state.latentCache.clear();
+            state.pcaData = null;
+
+            // Reset UI
+            closeSearch();
+            document.getElementById('search-input').value = '';
+            clearPreview();
+            updateClusterUI();
+            updatePinnedUI();
+            clearPointCloud();
+
+            await loadExperimentData();
+        }
+
+        async function loadExperimentData() {
+            try {
+                const response = await fetch(`${state.dataDir}/index.json`);
+                if (!response.ok) throw new Error('Failed to load index');
+                state.indexData = await response.json();
+
+                // Load search index in background
+                loadSearchIndex();
+
+            } catch (error) {
+                console.error('Failed to load experiment data:', error);
+            }
+        }
+
+        // ============================================================
+        // Search
+        // ============================================================
+        async function loadSearchIndex() {
+            if (state.searchIndex || state.searchIndexLoading || !state.dataDir) return;
+
+            state.searchIndexLoading = true;
+            const statusEl = document.getElementById('search-status');
+            statusEl.textContent = 'loading token index...';
+
+            try {
+                const response = await fetch(`${state.dataDir}/search_index.json`);
+                if (response.ok) {
+                    state.searchIndex = await response.json();
+                    statusEl.textContent = '';
+                    // Re-run search if active
+                    const q = document.getElementById('search-input').value;
+                    if (q) doSearch(q);
+                } else {
+                    statusEl.textContent = 'labels only';
+                }
+            } catch (e) {
+                console.log('Search index not available, using label search only');
+                statusEl.textContent = 'labels only';
+            }
+            state.searchIndexLoading = false;
+        }
+
+        function searchLatents(query) {
+            if (!query || !state.indexData) return [];
+
+            const q = query.toLowerCase().trim();
+            if (!q) return [];
+
+            const results = [];
+            const seen = new Set();
+
+            // 1. Label search
+            for (const [id, info] of Object.entries(state.indexData.latents)) {
+                if (info.label && info.label.toLowerCase().includes(q)) {
+                    const lid = parseInt(id);
+                    results.push({
+                        latent_id: lid,
+                        label: info.label,
+                        total_firings: info.total_firings || 0,
+                        match_type: 'label',
+                        matched_token: info.label,
+                    });
+                    seen.add(lid);
+                }
+            }
+
+            // 2. Token search
+            if (state.searchIndex && state.searchIndex.tokens) {
+                const latentMatchCount = new Map();
+                const latentFirstMatch = new Map();
+
+                for (const [token, latent_ids] of Object.entries(state.searchIndex.tokens)) {
+                    if (token.toLowerCase().includes(q)) {
+                        for (const lid of latent_ids) {
+                            if (!seen.has(lid)) {
+                                latentMatchCount.set(lid, (latentMatchCount.get(lid) || 0) + 1);
+                                if (!latentFirstMatch.has(lid)) {
+                                    latentFirstMatch.set(lid, token);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for (const [lid, count] of latentMatchCount) {
+                    const info = state.indexData.latents[lid.toString()] || {};
+                    results.push({
+                        latent_id: lid,
+                        label: info.label || '',
+                        total_firings: info.total_firings || 0,
+                        match_type: 'token',
+                        matched_token: latentFirstMatch.get(lid),
+                        match_count: count,
+                    });
+                    seen.add(lid);
+                }
+            }
+
+            results.sort((a, b) => {
+                if (a.match_type !== b.match_type) {
+                    return a.match_type === 'label' ? -1 : 1;
+                }
+                return b.total_firings - a.total_firings;
+            });
+
+            return results;
+        }
+
+        function renderSearchResults(results, query) {
+            const panel = document.getElementById('search-results');
+            const list = document.getElementById('search-results-list');
+            const countEl = document.getElementById('search-results-count');
+
+            if (results.length === 0) {
+                if (query && query.trim()) {
+                    panel.style.display = 'block';
+                    const indexNote = state.searchIndex ? '' : ' (label search only)';
+                    countEl.textContent = `No matches${indexNote}`;
+                    list.innerHTML = '<div class="search-no-results">No latents found</div>';
+                } else {
+                    panel.style.display = 'none';
+                }
+                return;
+            }
+
+            const maxResults = 200;
+            const shown = results.slice(0, maxResults);
+            const nLabels = results.filter(r => r.match_type === 'label').length;
+            const nTokens = results.length - nLabels;
+
+            let countParts = [];
+            if (nLabels > 0) countParts.push(`${nLabels} label`);
+            if (nTokens > 0) countParts.push(`${nTokens} token`);
+            const total = results.length > maxResults
+                ? `${maxResults} of ${results.length.toLocaleString()}`
+                : `${results.length}`;
+            countEl.textContent = `${total} match${results.length !== 1 ? 'es' : ''} (${countParts.join(', ')})`;
+
+            list.innerHTML = shown.map(r => {
+                const isPinned = state.pinnedLatents.includes(r.latent_id);
+                const labelHtml = r.label
+                    ? `<span class="search-result-label">&quot;${escapeHtml(r.label)}&quot;</span>`
+                    : '';
+                const tokenHtml = r.match_type === 'token' && r.matched_token !== r.label
+                    ? `<span class="search-result-token">&quot;${escapeHtml(r.matched_token)}&quot;</span>`
+                    : '';
+                const badgeClass = r.match_type === 'label' ? 'label-match' : '';
+                const badgeText = r.match_type === 'label' ? 'label' : 'token';
+                const pinnedBadge = isPinned ? ' <span style="color:#ff4500;font-size:9px;">pinned</span>' : '';
+
+                return `
+                    <div class="search-result ${isPinned ? 'pinned' : ''}" onclick="previewLatent(${r.latent_id})">
+                        <span class="search-result-id">${r.latent_id}</span>
+                        ${labelHtml}
+                        ${tokenHtml}
+                        <span class="search-result-badge ${badgeClass}">${badgeText}</span>${pinnedBadge}
+                        <span class="search-result-stats">${r.total_firings.toLocaleString()} firings</span>
+                    </div>
+                `;
+            }).join('');
+
+            panel.style.display = 'block';
+        }
+
+        function doSearch(query) {
+            const results = searchLatents(query);
+            renderSearchResults(results, query);
+        }
+
+        function closeSearch() {
+            document.getElementById('search-results').style.display = 'none';
+        }
+
+        function handleSearchInput(e) {
+            const query = e.target.value;
+            clearTimeout(state.searchDebounceTimer);
+            state.searchDebounceTimer = setTimeout(() => {
+                if (!query || !query.trim()) {
+                    closeSearch();
+                    return;
+                }
+                doSearch(query);
+            }, 150);
+        }
+
+        // ============================================================
+        // Iframe Preview
+        // ============================================================
+        function previewLatent(latentId) {
+            state.previewLatentId = latentId;
+
+            const iframe = document.getElementById('latent-preview');
+            const empty = document.getElementById('preview-empty');
+            const info = document.getElementById('preview-latent-info');
+            const pinBtn = document.getElementById('btn-pin');
+
+            const expId = state.currentExperiment?.id || '';
+            iframe.src = `index.html?exp=${expId}&latent=${latentId}&embed=true`;
+            iframe.style.display = 'block';
+            empty.style.display = 'none';
+
+            // Update info
+            const latentInfo = state.indexData?.latents?.[latentId.toString()];
+            const label = latentInfo?.label ? ` "${latentInfo.label}"` : '';
+            info.textContent = `#${latentId}${label}`;
+
+            // Update pin button
+            const isPinned = state.pinnedLatents.includes(latentId);
+            pinBtn.disabled = isPinned;
+            pinBtn.textContent = isPinned ? 'Already pinned' : 'Pin to cluster';
+        }
+
+        function clearPreview() {
+            state.previewLatentId = null;
+            const iframe = document.getElementById('latent-preview');
+            const empty = document.getElementById('preview-empty');
+            const info = document.getElementById('preview-latent-info');
+            const pinBtn = document.getElementById('btn-pin');
+
+            iframe.src = 'about:blank';
+            iframe.style.display = 'none';
+            empty.style.display = 'flex';
+            info.textContent = '';
+            pinBtn.disabled = true;
+            pinBtn.textContent = 'Pin to cluster';
+        }
+
+        // ============================================================
+        // Pinning
+        // ============================================================
+        function pinPreviewedLatent() {
+            if (state.previewLatentId === null) return;
+            pinLatent(state.previewLatentId);
+        }
+
+        async function pinLatent(latentId) {
+            if (state.pinnedLatents.includes(latentId)) return;
+
+            state.pinnedLatents.push(latentId);
+            state.cluster.add(latentId);
+
+            // Update pin button if this is the previewed latent
+            if (state.previewLatentId === latentId) {
+                const pinBtn = document.getElementById('btn-pin');
+                pinBtn.disabled = true;
+                pinBtn.textContent = 'Already pinned';
+            }
+
+            // Load latent data for card rendering
+            const data = await loadLatentData(latentId);
+            renderPinnedCard(latentId, data);
+            updateClusterUI();
+            updatePinnedUI();
+            schedulePCAUpdate();
+
+            // Re-render search results to show pinned state
+            const q = document.getElementById('search-input').value;
+            if (q) doSearch(q);
+        }
+
+        function unpinLatent(latentId) {
+            state.pinnedLatents = state.pinnedLatents.filter(id => id !== latentId);
+            state.cluster.delete(latentId);
+
+            // Remove card from DOM
+            const card = document.getElementById(`pinned-card-${latentId}`);
+            if (card) card.remove();
+
+            // Update pin button if this is the previewed latent
+            if (state.previewLatentId === latentId) {
+                const pinBtn = document.getElementById('btn-pin');
+                pinBtn.disabled = false;
+                pinBtn.textContent = 'Pin to cluster';
+            }
+
+            updateClusterUI();
+            updatePinnedUI();
+            schedulePCAUpdate();
+
+            // Re-render search results
+            const q = document.getElementById('search-input').value;
+            if (q) doSearch(q);
+        }
+
+        async function loadLatentData(latentId) {
+            if (state.latentCache.has(latentId)) {
+                return state.latentCache.get(latentId);
+            }
+
+            const paddedId = String(latentId).padStart(5, '0');
+            try {
+                const response = await fetch(`${state.dataDir}/latents/${paddedId}.json`);
+                if (!response.ok) return null;
+                const data = await response.json();
+
+                if (state.latentCache.size >= state.CACHE_SIZE) {
+                    const firstKey = state.latentCache.keys().next().value;
+                    state.latentCache.delete(firstKey);
+                }
+                state.latentCache.set(latentId, data);
+                return data;
+            } catch (e) {
+                console.error(`Failed to load latent ${latentId}:`, e);
+                return null;
+            }
+        }
+
+        function renderPinnedCard(latentId, data) {
+            const grid = document.getElementById('pinned-grid');
+            const emptyMsg = document.getElementById('pinned-empty');
+            if (emptyMsg) emptyMsg.style.display = 'none';
+
+            const inCluster = state.cluster.has(latentId);
+            const info = state.indexData?.latents?.[latentId.toString()] || {};
+            const label = info.label || (data && data.label) || '';
+            const firings = info.total_firings || 0;
+
+            // Get top 2 examples
+            let examplesHtml = '';
+            if (data) {
+                const examples = data.examples || { top: data.top_examples || [] };
+                const topExamples = (examples.top || []).slice(0, 2);
+                const stats = data.activation_stats || {};
+
+                examplesHtml = topExamples.map(ex => {
+                    const tokensHtml = renderTokens(ex, stats.max || ex.max_activation || 1);
+                    return `<div class="card-example">${tokensHtml}</div>`;
+                }).join('');
+            }
+
+            const cardHtml = `
+                <div class="pinned-card ${inCluster ? 'in-cluster' : ''}"
+                     id="pinned-card-${latentId}" data-latent-id="${latentId}">
+                    <div class="card-actions">
+                        <button class="card-btn ${inCluster ? 'active' : ''}"
+                                onclick="toggleLatentInCluster(${latentId})"
+                                title="Toggle in cluster"
+                                id="cluster-toggle-${latentId}">&#10003;</button>
+                        <button class="card-btn" onclick="unpinLatent(${latentId})"
+                                title="Unpin">&times;</button>
+                    </div>
+                    <div class="card-header">
+                        <span class="card-id">#${latentId}</span>
+                        ${label ? `<span class="card-label">&quot;${escapeHtml(label)}&quot;</span>` : ''}
+                    </div>
+                    <div class="card-stats">${firings.toLocaleString()} firings</div>
+                    ${examplesHtml}
+                </div>
+            `;
+
+            grid.insertAdjacentHTML('beforeend', cardHtml);
+        }
+
+        function updatePinnedUI() {
+            const countEl = document.getElementById('pinned-count');
+            const emptyEl = document.getElementById('pinned-empty');
+            countEl.textContent = state.pinnedLatents.length > 0
+                ? `(${state.pinnedLatents.length})`
+                : '';
+
+            if (state.pinnedLatents.length === 0 && emptyEl) {
+                emptyEl.style.display = 'block';
+            }
+        }
+
+        // ============================================================
+        // Token Rendering (from index.html)
+        // ============================================================
+        function renderTokens(example, globalMax) {
+            const tokens = example.tokens || [];
+            const activations = example.token_activations || [];
+            const localMax = Math.max(...activations.filter(a => a > 0), 0.001);
+
+            return tokens.map((token, idx) => {
+                const act = activations[idx] || 0;
+                const escaped = escapeHtml(token);
+
+                if (act > 0) {
+                    const intensity = Math.ceil((act / localMax) * 9);
+                    const level = Math.min(9, Math.max(1, intensity));
+                    return `<span class="token highlighted act-${level}">${escaped}</span>`;
+                }
+                return `<span class="token">${escaped}</span>`;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ============================================================
+        // Cluster Management
+        // ============================================================
+        function toggleLatentInCluster(latentId) {
+            const card = document.getElementById(`pinned-card-${latentId}`);
+            const toggle = document.getElementById(`cluster-toggle-${latentId}`);
+
+            if (state.cluster.has(latentId)) {
+                state.cluster.delete(latentId);
+                if (card) card.classList.remove('in-cluster');
+                if (toggle) toggle.classList.remove('active');
+            } else {
+                state.cluster.add(latentId);
+                if (card) card.classList.add('in-cluster');
+                if (toggle) toggle.classList.add('active');
+            }
+
+            updateClusterUI();
+            schedulePCAUpdate();
+        }
+
+        function removeFromCluster(latentId) {
+            state.cluster.delete(latentId);
+            const card = document.getElementById(`pinned-card-${latentId}`);
+            const toggle = document.getElementById(`cluster-toggle-${latentId}`);
+            if (card) card.classList.remove('in-cluster');
+            if (toggle) toggle.classList.remove('active');
+
+            updateClusterUI();
+            schedulePCAUpdate();
+        }
+
+        function updateClusterUI() {
+            const chipsEl = document.getElementById('cluster-chips');
+            const countEl = document.getElementById('cluster-count');
+
+            if (state.cluster.size === 0) {
+                chipsEl.innerHTML = '<span class="cluster-empty">Search and pin latents to build a cluster</span>';
+                countEl.textContent = '0 latents';
+                return;
+            }
+
+            countEl.textContent = `${state.cluster.size} latent${state.cluster.size !== 1 ? 's' : ''}`;
+
+            const sorted = Array.from(state.cluster).sort((a, b) => a - b);
+            chipsEl.innerHTML = sorted.map(id => {
+                const info = state.indexData?.latents?.[id.toString()];
+                const label = info?.label ? ` "${escapeHtml(info.label)}"` : '';
+                return `<span class="latent-chip">${id}${label}
+                    <span class="remove" onclick="removeFromCluster(${id})">&times;</span>
+                </span>`;
+            }).join('');
+        }
+
+        function clearAll() {
+            state.pinnedLatents = [];
+            state.cluster.clear();
+            state.pcaData = null;
+
+            // Clear cards
+            document.getElementById('pinned-grid').innerHTML =
+                '<div class="pinned-empty" id="pinned-empty">Pin latents from the preview above</div>';
+
+            updateClusterUI();
+            updatePinnedUI();
+            clearPointCloud();
+
+            // Update pin button
+            if (state.previewLatentId !== null) {
+                const pinBtn = document.getElementById('btn-pin');
+                pinBtn.disabled = false;
+                pinBtn.textContent = 'Pin to cluster';
+            }
+
+            // Re-render search results
+            const q = document.getElementById('search-input').value;
+            if (q) doSearch(q);
+        }
+
+        // ============================================================
+        // Saved Clusters (localStorage)
+        // ============================================================
+        function loadSavedClusters() {
+            const saved = localStorage.getItem('cluster-explorer-saved');
+            state.savedClusters = saved ? JSON.parse(saved) : [];
+            updateSavedClustersUI();
+        }
+
+        function updateSavedClustersUI() {
+            const select = document.getElementById('load-select');
+            select.innerHTML = '<option value="">Load saved...</option>' +
+                state.savedClusters.map((c, i) =>
+                    `<option value="${i}">${escapeHtml(c.name)} (${c.latents.length})</option>`
+                ).join('');
+        }
+
+        function saveCluster() {
+            if (state.cluster.size === 0) return;
+
+            const name = prompt('Enter a name for this cluster:',
+                `Cluster ${state.savedClusters.length + 1}`);
+            if (!name) return;
+
+            state.savedClusters.push({
+                name,
+                latents: Array.from(state.cluster),
+                pinned: [...state.pinnedLatents],
+                experiment: state.currentExperiment?.id,
+                timestamp: Date.now(),
+            });
+
+            localStorage.setItem('cluster-explorer-saved', JSON.stringify(state.savedClusters));
+            updateSavedClustersUI();
+        }
+
+        async function loadCluster(index) {
+            if (index === '' || index === null) return;
+            const saved = state.savedClusters[parseInt(index)];
+            if (!saved) return;
+
+            // Clear current state
+            state.pinnedLatents = [];
+            state.cluster.clear();
+            document.getElementById('pinned-grid').innerHTML =
+                '<div class="pinned-empty" id="pinned-empty">Pin latents from the preview above</div>';
+
+            // Restore pinned latents and cluster
+            for (const id of (saved.pinned || saved.latents)) {
+                state.pinnedLatents.push(id);
+                if (saved.latents.includes(id)) {
+                    state.cluster.add(id);
+                }
+                const data = await loadLatentData(id);
+                renderPinnedCard(id, data);
+            }
+
+            updateClusterUI();
+            updatePinnedUI();
+            schedulePCAUpdate();
+
+            // Reset select
+            document.getElementById('load-select').value = '';
+        }
+
+        // ============================================================
+        // Point Cloud (Plotly)
+        // ============================================================
+        function initScatterPlots() {
+            const grid2d = document.getElementById('scatter-grid-2d');
+            const grid3d = document.getElementById('scatter-grid-3d');
+
+            const pcPairs = [
+                [1,2], [2,3], [3,4], [4,5],
+                [5,6], [6,7], [7,8], [8,9],
+                [9,10], [10,11], [11,12], [12,13]
+            ];
+
+            grid2d.innerHTML = pcPairs.map(([a, b], i) => `
+                <div class="scatter-cell" id="scatter-2d-${i}">
+                    <div class="scatter-placeholder">PC${a} vs PC${b}</div>
+                </div>
+            `).join('');
+
+            grid3d.innerHTML = `
+                <div class="scatter-cell" id="scatter-3d-0">
+                    <div class="scatter-placeholder">PC1-2-3 (3D)</div>
+                </div>
+                <div class="scatter-cell" id="scatter-3d-1">
+                    <div class="scatter-placeholder">PC4-5-6 (3D)</div>
+                </div>
+            `;
+        }
+
+        function schedulePCAUpdate() {
+            clearTimeout(state.pcaDebounceTimer);
+            state.pcaDebounceTimer = setTimeout(() => {
+                updatePointCloud();
+            }, 300);
+        }
+
+        async function updatePointCloud() {
+            if (state.cluster.size === 0) {
+                clearPointCloud();
+                return;
+            }
+
+            document.getElementById('cloud-stats').innerHTML =
+                '<span class="spinner"></span> Computing PCA...';
+
+            try {
+                const response = await fetch(`${API_BASE}/cluster/pca`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        latent_ids: Array.from(state.cluster),
+                        n_components: 13,
+                        max_points: 50000,
+                        experiment_id: state.currentExperiment?.id,
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                state.pcaData = data;
+
+                const varExplained = data.explained_variance_ratio
+                    .slice(0, 6)
+                    .reduce((a, b) => a + b, 0) * 100;
+
+                document.getElementById('cloud-stats').textContent =
+                    `${data.n_points.toLocaleString()} points | ` +
+                    `Var: ${varExplained.toFixed(1)}% (PC1-6)` +
+                    (data.subsampled ? ' | subsampled' : '');
+
+                renderScatterPlots(data);
+
+            } catch (error) {
+                console.error('Failed to compute PCA:', error);
+                const hint = state.backendConnected ? '' : ' Start backend: cd backend && uvicorn main:app --port 8000';
+                document.getElementById('cloud-stats').textContent =
+                    `Error: ${error.message}.${hint}`;
+            }
+        }
+
+        function clearPointCloud() {
+            state.pcaData = null;
+            document.getElementById('cloud-stats').textContent =
+                'Add latents to cluster to view point cloud';
+
+            const pcPairs = [
+                [1,2], [2,3], [3,4], [4,5],
+                [5,6], [6,7], [7,8], [8,9],
+                [9,10], [10,11], [11,12], [12,13]
+            ];
+
+            for (let i = 0; i < 12; i++) {
+                const el = document.getElementById(`scatter-2d-${i}`);
+                if (el) {
+                    el.innerHTML = `<div class="scatter-placeholder">PC${pcPairs[i][0]} vs PC${pcPairs[i][1]}</div>`;
+                }
+            }
+
+            const labels3d = ['PC1-2-3 (3D)', 'PC4-5-6 (3D)'];
+            for (let i = 0; i < 2; i++) {
+                const el = document.getElementById(`scatter-3d-${i}`);
+                if (el) {
+                    el.innerHTML = `<div class="scatter-placeholder">${labels3d[i]}</div>`;
+                }
+            }
+        }
+
+        function renderScatterPlots(data) {
+            if (!data.points || data.points.length === 0) {
+                clearPointCloud();
+                return;
+            }
+
+            const points = data.points;
+            const nComponents = points[0].length;
+
+            // Extract columns
+            const pcs = [];
+            for (let i = 0; i < nComponents; i++) {
+                pcs.push(points.map(p => p[i]));
+            }
+
+            // White theme layout
+            const layoutBase = {
+                paper_bgcolor: 'rgba(255,255,255,0)',
+                plot_bgcolor: '#fafafa',
+                margin: { l: 25, r: 5, t: 20, b: 25 },
+                font: { color: '#999', size: 9 },
+                xaxis: {
+                    gridcolor: '#e8e8e8',
+                    zerolinecolor: '#ccc',
+                    tickfont: { size: 8, color: '#aaa' },
+                },
+                yaxis: {
+                    gridcolor: '#e8e8e8',
+                    zerolinecolor: '#ccc',
+                    tickfont: { size: 8, color: '#aaa' },
+                },
+            };
+
+            // 2D plots
+            const pcPairs = [
+                [0,1], [1,2], [2,3], [3,4],
+                [4,5], [5,6], [6,7], [7,8],
+                [8,9], [9,10], [10,11], [11,12]
+            ];
+
+            pcPairs.forEach(([a, b], i) => {
+                if (a >= nComponents || b >= nComponents) return;
+
+                const el = document.getElementById(`scatter-2d-${i}`);
+                if (!el) return;
+                el.innerHTML = '';
+
+                const trace = {
+                    x: pcs[a],
+                    y: pcs[b],
+                    mode: 'markers',
+                    type: 'scattergl',
+                    marker: { size: 2, color: '#ff4500', opacity: 0.5 },
+                };
+
+                const layout = {
+                    ...layoutBase,
+                    xaxis: { ...layoutBase.xaxis, title: { text: `PC${a+1}`, font: { size: 9, color: '#999' } } },
+                    yaxis: { ...layoutBase.yaxis, title: { text: `PC${b+1}`, font: { size: 9, color: '#999' } } },
+                };
+
+                Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
+            });
+
+            // 3D plots
+            const plot3dConfigs = [
+                { pcs: [0, 1, 2], label: ['PC1', 'PC2', 'PC3'] },
+                { pcs: [3, 4, 5], label: ['PC4', 'PC5', 'PC6'] },
+            ];
+
+            plot3dConfigs.forEach((config, i) => {
+                const [a, b, c] = config.pcs;
+                if (a >= nComponents || b >= nComponents || c >= nComponents) return;
+
+                const el = document.getElementById(`scatter-3d-${i}`);
+                if (!el) return;
+                el.innerHTML = '';
+
+                const trace = {
+                    x: pcs[a],
+                    y: pcs[b],
+                    z: pcs[c],
+                    mode: 'markers',
+                    type: 'scatter3d',
+                    marker: { size: 2, color: '#ff4500', opacity: 0.5 },
+                };
+
+                const layout = {
+                    paper_bgcolor: 'rgba(255,255,255,0)',
+                    margin: { l: 0, r: 0, t: 0, b: 0 },
+                    scene: {
+                        bgcolor: '#fafafa',
+                        xaxis: { title: config.label[0], gridcolor: '#e8e8e8', tickfont: { size: 8, color: '#aaa' } },
+                        yaxis: { title: config.label[1], gridcolor: '#e8e8e8', tickfont: { size: 8, color: '#aaa' } },
+                        zaxis: { title: config.label[2], gridcolor: '#e8e8e8', tickfont: { size: 8, color: '#aaa' } },
+                    },
+                };
+
+                Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
+            });
+        }
+
+        // ============================================================
+        // Backend Status
+        // ============================================================
+        async function checkBackend() {
+            const statusEl = document.getElementById('backend-status');
+            try {
+                const response = await fetch(API_BASE.replace('/api', '/'), { method: 'GET' });
+                if (response.ok) {
+                    state.backendConnected = true;
+                    statusEl.textContent = 'Backend connected';
+                    statusEl.className = 'backend-status connected';
+                } else {
+                    throw new Error('Bad response');
+                }
+            } catch (e) {
+                state.backendConnected = false;
+                statusEl.textContent = 'Backend offline';
+                statusEl.className = 'backend-status disconnected';
+            }
+        }
+
+        // ============================================================
+        // Keyboard Shortcuts
+        // ============================================================
+        document.addEventListener('keydown', (e) => {
+            // Handle search input
+            if (e.target.id === 'search-input') {
+                if (e.key === 'Escape') {
+                    closeSearch();
+                    e.target.value = '';
+                    e.target.blur();
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            // Don't intercept other inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+                if (e.key === 'Escape') e.target.blur();
+                return;
+            }
+
+            switch (e.key) {
+                case '/':
+                    document.getElementById('search-input').focus();
+                    document.getElementById('search-input').select();
+                    e.preventDefault();
+                    break;
+                case 'Escape':
+                    closeSearch();
+                    break;
+            }
+        });
+
+        // ============================================================
+        // Start
+        // ============================================================
+        init();
+    </script>
+</body>
+</html>
