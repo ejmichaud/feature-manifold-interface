@@ -19,6 +19,67 @@ This tool allows researchers to explore the geometry of LLM features through:
 - **Layer**: 31
 - **Corpus**: pile_uncopyrighted (~10M tokens)
 
+## Machine Setup
+
+Setup instructions for running on a new machine. The `/remote` directory is shared across machines and contains experiment data.
+
+### 1. Clone the Repository
+
+```bash
+cd /data/users/$USER
+git clone <repo-url> feature-manifold-interface
+cd feature-manifold-interface
+```
+
+### 2. Create Python Virtual Environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install pipeline dependencies (for harvesting activations)
+pip install torch transformers datasets sae-lens tqdm numpy scipy scikit-learn umap-learn pyyaml
+
+# Install backend dependencies
+pip install -r backend/requirements.txt
+```
+
+### 3. Create Data Directory and Symlinks
+
+The experiment data lives on the shared `/remote` filesystem. Create symlinks to access it:
+
+```bash
+# Create local data directory
+mkdir -p data
+
+# Symlink to shared experiment data on /remote
+ln -s /remote/ericjm/feature-manifold-interface/data/experiments data/experiments
+ln -s /remote/ericjm/feature-manifold-interface/data/experiments.json data/experiments.json
+```
+
+### 4. HuggingFace Cache (Optional)
+
+If running the harvest pipeline, you may want to set a shared HuggingFace cache to avoid re-downloading large models:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export HF_HOME=/remote/ericjm/.cache/huggingface
+
+# Or set per-session
+HF_HOME=/remote/ericjm/.cache/huggingface python scripts/harvest_activations_v2.py ...
+```
+
+### 5. Verify Setup
+
+```bash
+# Check symlinks are working
+ls -la data/experiments
+
+# Test backend can load data
+cd backend
+DATA_ROOT=../data python -c "from services.data import DataService; ds = DataService('../data'); print(ds.list_experiments())"
+```
+
 ## Data Pipeline
 
 ### Prerequisites
