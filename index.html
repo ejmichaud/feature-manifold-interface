@@ -47,8 +47,8 @@
         }
 
         .cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            display: flex;
+            flex-direction: column;
             gap: 16px;
         }
 
@@ -139,14 +139,32 @@
         </div>
 
         <div class="cards">
+            <a href="visualizer/cluster.html" class="card">
+                <div class="card-title">
+                    Cluster Explorer
+                    <span class="card-tag">Geometry</span>
+                </div>
+                <p class="card-description">
+                    Visualize LLM feature geometry. Select SAE latents based on their
+                    max-activating tokens and explore activation reconstructions in PCA space.
+                </p>
+                <div class="card-features">
+                    <ul>
+                        <li>Search latents by label</li>
+                        <li>Build and manage clusters</li>
+                        <li>Point cloud visualization</li>
+                    </ul>
+                </div>
+            </a>
+
             <a href="visualizer/index.html" class="card">
                 <div class="card-title">
                     Latent Browser
                     <span class="card-tag">Browse</span>
                 </div>
                 <p class="card-description">
-                    View max-activating examples for individual SAE latents.
-                    Navigate through latents to see which tokens activate each feature.
+                    Search and explore SAE latents' max-activating examples.
+                    No activation geometry visualization.
                 </p>
                 <div class="card-features">
                     <ul>
@@ -156,65 +174,11 @@
                     </ul>
                 </div>
             </a>
-
-            <a href="visualizer/umap.html" class="card">
-                <div class="card-title">
-                    UMAP Explorer
-                    <span class="card-tag">2D Map</span>
-                </div>
-                <p class="card-description">
-                    Click latents on a 2D UMAP projection to browse their examples.
-                    Discover clusters of related features.
-                </p>
-                <div class="card-features">
-                    <ul>
-                        <li>Pan and zoom navigation</li>
-                        <li>Click to select latent</li>
-                        <li>Semantic clustering visible</li>
-                    </ul>
-                </div>
-            </a>
-
-            <a href="visualizer/graph.html" class="card">
-                <div class="card-title">
-                    Graph Visualizer
-                    <span class="card-tag">Network</span>
-                </div>
-                <p class="card-description">
-                    Force-directed graph of latent relationships with interactive
-                    point cloud visualization of activation reconstructions.
-                </p>
-                <div class="card-features">
-                    <ul>
-                        <li>Build clusters by clicking</li>
-                        <li>PCA projection of reconstructions</li>
-                        <li>Edge weight controls</li>
-                    </ul>
-                </div>
-            </a>
-
-            <a href="visualizer/cluster.html" class="card">
-                <div class="card-title">
-                    Cluster Explorer
-                    <span class="card-tag">Analysis</span>
-                </div>
-                <p class="card-description">
-                    Deep dive into feature clusters. Build and analyze groups of
-                    related latents with detailed statistics.
-                </p>
-                <div class="card-features">
-                    <ul>
-                        <li>Search latents by label</li>
-                        <li>Cluster management</li>
-                        <li>Point cloud visualization</li>
-                    </ul>
-                </div>
-            </a>
         </div>
 
         <div class="footer">
             <p>Inspired by Engels et al. (2024) &mdash;
-            <a href="https://arxiv.org/abs/2405.14860" target="_blank">Not All Language Model Features Are Linear</a></p>
+            <a href="https://arxiv.org/abs/2405.14860" target="_blank">Not All Language Model Features Are One-Dimensionally Linear</a></p>
         </div>
     </div>
 </body>

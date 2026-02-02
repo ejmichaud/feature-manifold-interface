@@ -807,7 +807,7 @@
         const DATA_ROOT = _urlParams.get('dataRoot') || '../data';
         const EXPERIMENTS_ROOT = `${DATA_ROOT}/experiments`;
         const MANIFEST_URL = `${DATA_ROOT}/experiments.json`;
-        const API_BASE = _urlParams.get('apiBase') || 'http://localhost:8000/api';
+        const API_BASE = _urlParams.get('apiBase') || `http://${window.location.hostname}:8000/api`;
 
         // ============================================================
         // State
@@ -909,9 +909,10 @@
                 }).join('');
 
                 const expParam = _urlParams.get('exp');
+                const preferredDefault = 'gemma-3-27b-pt_layer16_65k_medium';
                 const defaultExp = expParam && state.experiments.find(e => e.id === expParam)
                     ? expParam
-                    : state.experiments[0].id;
+                    : state.experiments.find(e => e.id === preferredDefault)?.id || state.experiments[0].id;
 
                 select.value = defaultExp;
                 await switchExperiment(defaultExp);

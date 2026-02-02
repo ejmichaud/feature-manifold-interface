@@ -545,9 +545,10 @@
                 // Check URL for experiment parameter
                 const urlParams = new URLSearchParams(window.location.search);
                 const expParam = urlParams.get('exp');
+                const preferredDefault = 'gemma-3-27b-pt_layer16_65k_medium';
                 const defaultExp = expParam && experiments.find(e => e.id === expParam)
                     ? expParam
-                    : experiments[0].id;
+                    : experiments.find(e => e.id === preferredDefault)?.id || experiments[0].id;
 
                 select.value = defaultExp;
                 await switchExperiment(defaultExp);

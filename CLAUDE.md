@@ -242,11 +242,13 @@ python scripts/export_umap_json.py \
 
 ```bash
 cd visualizer
-python -m http.server 8080
+python -m http.server 8080 --bind 0.0.0.0
 ```
 
 - http://localhost:8080 - Simple latent browser
 - http://localhost:8080/umap.html - UMAP explorer
+
+**Note:** Use `--bind 0.0.0.0` for remote access from other machines.
 
 ## Scripts Reference
 
@@ -310,14 +312,16 @@ Interactive force-directed graph with point cloud visualization:
 ```bash
 # Start backend (in one terminal)
 cd backend
-DATA_ROOT=../data uvicorn main:app --port 8000
+DATA_ROOT=../data uvicorn main:app --port 8000 --host 0.0.0.0
 
 # Serve frontend (in another terminal)
 cd visualizer
-python -m http.server 8080
+python -m http.server 8080 --bind 0.0.0.0
 
 # Open http://localhost:8080/graph.html
 ```
+
+**Note:** Use `--host 0.0.0.0` (backend) and `--bind 0.0.0.0` (frontend) to allow access from other machines. Without these flags, the servers only listen on localhost.
 
 ## Data Format
 
