@@ -217,6 +217,22 @@ def run_pipeline(
         if success and not dry_run:
             mark_step_complete(index_marker)
 
+    # Step 2.5: Build corpus token data for hover context (non-critical)
+    token_ids_file = dirs["corpus"] / "token_ids.npy"
+    if token_ids_file.exists() and not force:
+        print("\n[SKIP] Build corpus tokens (already exists)")
+    else:
+        run_command(
+            [
+                sys.executable, scripts_dir / "build_corpus_tokens.py",
+                "--experiment-dir", str(dirs["experiment"]),
+                "--model", model,
+            ],
+            "Build corpus tokens for hover context",
+            dry_run=dry_run,
+        )
+        # Non-critical: continue even if this fails
+
     # Step 3: Compute graph edges and UMAP (CRITICAL)
     graph_marker = dirs["graph"] / ".graph_complete"
     if skip_edges:

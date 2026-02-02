@@ -38,6 +38,12 @@ class DataLoader:
         self._jaccard_edges: sparse.csr_matrix | None = None
         self._coactivation_edges: sparse.csr_matrix | None = None
 
+        # Corpus token data (for hover context)
+        self._token_ids: np.ndarray | None = None  # global_token_index -> vocab_id
+        self._token_map: np.ndarray | None = None  # global_token_index -> (doc_id, position)
+        self._vocab: dict[int, str] | None = None   # vocab_id -> token string
+        self._corpus_loaded = False
+
         # Latent data cache
         self._latent_cache: dict[int, dict] = {}
         self._cache_max_size = 1000  # Max latents to keep in memory
@@ -180,3 +186,108 @@ class DataLoader:
                 })
 
         return edge_list
+
+    def _load_corpus_data(self) -> bool:
+        """Load corpus token data for hover context. Returns True if available."""
+        if self._corpus_loaded:
+            return self._token_ids is not None
+
+        self._corpus_loaded = True
+        corpus_dir = self.data_dir / "corpus"
+
+        token_ids_path = corpus_dir / "token_ids.npy"
+        vocab_path = corpus_dir / "vocab.json"
+        token_map_path = corpus_dir / "token_map.npy"
+
+        if not token_ids_path.exists() or not vocab_path.exists():
+            print(f"  Corpus token data not found (run build_corpus_tokens.py)")
+            return False
+
+        self._token_ids = np.load(token_ids_path)
+        print(f"  Loaded token_ids: {self._token_ids.shape}")
+
+        with open(vocab_path) as f:
+            raw_vocab = json.load(f)
+        self._vocab = {int(k): v for k, v in raw_vocab.items()}
+        print(f"  Loaded vocab: {len(self._vocab)} entries")
+
+        if token_map_path.exists():
+            self._token_map = np.load(token_map_path)
+            print(f"  Loaded token_map: {self._token_map.shape}")
+
+        return True
+
+    def build_hover_texts(
+        self,
+        token_indices: list[int],
+        context_size: int = 8,
+    ) -> list[str] | None:
+        """Build hover text strings for a list of token indices.
+
+        Each hover text shows ~context_size preceding tokens plus the
+        active token in bold. Document boundaries are respected.
+
+        Args:
+            token_indices: Global token indices to build hover for
+            context_size: Number of preceding tokens to include
+
+        Returns:
+            List of HTML strings, or None if corpus data unavailable
+        """
+        if not self._load_corpus_data():
+            return None
+
+        token_ids = self._token_ids
+        vocab = self._vocab
+        token_map = self._token_map
+        n_tokens = len(token_ids)
+
+        hover_texts = []
+        for tok_idx in token_indices:
+            if tok_idx < 0 or tok_idx >= n_tokens:
+                hover_texts.append("???")
+                continue
+
+            # Get the active token
+            active_id = int(token_ids[tok_idx])
+            if active_id < 0:
+                hover_texts.append("???")
+                continue
+
+            active_str = vocab.get(active_id, "?")
+
+            # Build context: walk backwards up to context_size tokens
+            context_tokens = []
+            if token_map is not None:
+                doc_id = int(token_map[tok_idx, 0])
+                for offset in range(1, context_size + 1):
+                    prev_idx = tok_idx - offset
+                    if prev_idx < 0:
+                        break
+                    # Check same document
+                    if int(token_map[prev_idx, 0]) != doc_id:
+                        break
+                    prev_id = int(token_ids[prev_idx])
+                    if prev_id < 0:
+                        context_tokens.append("…")
+                    else:
+                        context_tokens.append(vocab.get(prev_id, "?"))
+            else:
+                # No token_map: just go backwards, hope for the best
+                for offset in range(1, context_size + 1):
+                    prev_idx = tok_idx - offset
+                    if prev_idx < 0:
+                        break
+                    prev_id = int(token_ids[prev_idx])
+                    if prev_id < 0:
+                        context_tokens.append("…")
+                    else:
+                        context_tokens.append(vocab.get(prev_id, "?"))
+
+            # Reverse to get natural order
+            context_tokens.reverse()
+
+            context_str = "".join(context_tokens)
+            hover_texts.append(f"{context_str}<b>{active_str}</b>")
+
+        return hover_texts

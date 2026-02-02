@@ -53,7 +53,7 @@
         }
 
         .left-panel {
-            width: 45%;
+            width: 50%;
             display: flex;
             flex-direction: column;
             border-right: 1px solid #e0e0e0;
@@ -62,7 +62,7 @@
         }
 
         .right-panel {
-            width: 55%;
+            width: 50%;
             display: flex;
             flex-direction: column;
             background: #fafafa;
@@ -212,6 +212,8 @@
         }
 
         .search-result:hover { background: #fff5f0; }
+        .search-result.highlighted { background: #fff3e0; }
+        .search-result.highlighted:hover { background: #ffe0b2; }
         .search-result.pinned { background: #f5f5f5; }
 
         .search-result-id {
@@ -491,9 +493,12 @@
             padding: 8px 10px;
             position: relative;
             transition: border-color 0.15s;
+            cursor: pointer;
         }
 
         .pinned-card:hover { border-color: #ccc; }
+        .pinned-card.flash { animation: cardFlash 0.3s ease; }
+        @keyframes cardFlash { 0%, 100% { background: white; } 50% { background: #fff3e0; } }
 
         .pinned-card.in-cluster {
             border-color: #ff4500;
@@ -507,6 +512,22 @@
             gap: 6px;
             margin-bottom: 4px;
         }
+
+        .card-position {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            background: #e8e8e8;
+            color: #666;
+            font-size: 9px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .card-position:empty { display: none; }
 
         .card-id {
             font-weight: 600;
@@ -628,9 +649,9 @@
         .scatter-grid-2d {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            grid-template-rows: repeat(3, 1fr);
+            grid-template-rows: repeat(2, 1fr);
             gap: 4px;
-            flex: 3;
+            flex: 2;
         }
 
         .scatter-grid-3d {
@@ -687,6 +708,9 @@
             <span class="backend-status disconnected" id="backend-status">Checking backend...</span>
             <div class="keyboard-hints">
                 <span class="key">/</span> search
+                <span class="key">↑↓</span> navigate
+                <span class="key">p</span> pin
+                <span class="key">1-9</span> pinned
                 <span class="key">Esc</span> close
             </div>
         </header>
@@ -824,6 +848,8 @@
 
             // Search
             searchDebounceTimer: null,
+            searchResults: [],
+            searchHighlightIndex: -1,
         };
 
         // ============================================================
@@ -846,7 +872,7 @@
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimer);
                 resizeTimer = setTimeout(() => {
-                    for (let i = 0; i < 12; i++) {
+                    for (let i = 0; i < 8; i++) {
                         const el = document.getElementById(`scatter-2d-${i}`);
                         if (el && el.querySelector('.js-plotly-plot')) Plotly.Plots.resize(el);
                     }
@@ -1066,7 +1092,7 @@
                 : `${results.length}`;
             countEl.textContent = `${total} match${results.length !== 1 ? 'es' : ''} (${countParts.join(', ')})`;
 
-            list.innerHTML = shown.map(r => {
+            list.innerHTML = shown.map((r, i) => {
                 const isPinned = state.pinnedLatents.includes(r.latent_id);
                 const labelHtml = r.label
                     ? `<span class="search-result-label">&quot;${escapeHtml(r.label)}&quot;</span>`
@@ -1079,7 +1105,7 @@
                 const pinnedBadge = isPinned ? ' <span style="color:#ff4500;font-size:9px;">pinned</span>' : '';
 
                 return `
-                    <div class="search-result ${isPinned ? 'pinned' : ''}" onclick="previewLatent(${r.latent_id})">
+                    <div class="search-result ${isPinned ? 'pinned' : ''}" data-index="${i}" onclick="previewLatent(${r.latent_id})">
                         <span class="search-result-id">${r.latent_id}</span>
                         ${labelHtml}
                         ${tokenHtml}
@@ -1094,11 +1120,42 @@
 
         function doSearch(query) {
             const results = searchLatents(query);
+            state.searchResults = results;
+            state.searchHighlightIndex = -1;
             renderSearchResults(results, query);
         }
 
         function closeSearch() {
             document.getElementById('search-results').style.display = 'none';
+            state.searchHighlightIndex = -1;
+            state.searchResults = [];
+        }
+
+        function highlightSearchResult(index) {
+            const list = document.getElementById('search-results-list');
+            const items = list.querySelectorAll('.search-result');
+            const maxIndex = Math.min(items.length, 200) - 1;
+
+            // Clamp index
+            if (index < 0) index = 0;
+            if (index > maxIndex) index = maxIndex;
+
+            // Remove old highlight
+            items.forEach(el => el.classList.remove('highlighted'));
+
+            state.searchHighlightIndex = index;
+            const target = items[index];
+            if (target) {
+                target.classList.add('highlighted');
+                target.scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function selectHighlightedResult() {
+            if (state.searchHighlightIndex >= 0 && state.searchHighlightIndex < state.searchResults.length) {
+                const result = state.searchResults[state.searchHighlightIndex];
+                previewLatent(result.latent_id);
+            }
         }
 
         function handleSearchInput(e) {
@@ -1260,16 +1317,18 @@
 
             const cardHtml = `
                 <div class="pinned-card ${inCluster ? 'in-cluster' : ''}"
-                     id="pinned-card-${latentId}" data-latent-id="${latentId}">
+                     id="pinned-card-${latentId}" data-latent-id="${latentId}"
+                     onclick="previewLatent(${latentId})">
                     <div class="card-actions">
                         <button class="card-btn ${inCluster ? 'active' : ''}"
-                                onclick="toggleLatentInCluster(${latentId})"
+                                onclick="event.stopPropagation(); toggleLatentInCluster(${latentId})"
                                 title="Toggle in cluster"
                                 id="cluster-toggle-${latentId}">&#10003;</button>
-                        <button class="card-btn" onclick="unpinLatent(${latentId})"
+                        <button class="card-btn" onclick="event.stopPropagation(); unpinLatent(${latentId})"
                                 title="Unpin">&times;</button>
                     </div>
                     <div class="card-header">
+                        <span class="card-position"></span>
                         <span class="card-id">#${latentId}</span>
                         ${label ? `<span class="card-label">&quot;${escapeHtml(label)}&quot;</span>` : ''}
                     </div>
@@ -1291,6 +1350,18 @@
             if (state.pinnedLatents.length === 0 && emptyEl) {
                 emptyEl.style.display = 'block';
             }
+
+            // Update position numbers on cards
+            state.pinnedLatents.forEach((id, i) => {
+                const card = document.getElementById(`pinned-card-${id}`);
+                if (card) {
+                    const posEl = card.querySelector('.card-position');
+                    if (posEl) {
+                        posEl.textContent = i < 9 ? `${i + 1}` : '';
+                        posEl.title = i < 9 ? `Press ${i + 1} to preview` : '';
+                    }
+                }
+            });
         }
 
         // ============================================================
@@ -1473,8 +1544,7 @@
 
             const pcPairs = [
                 [1,2], [2,3], [3,4], [4,5],
-                [5,6], [6,7], [7,8], [8,9],
-                [9,10], [10,11], [11,12], [12,13]
+                [5,6], [6,7], [7,8], [8,9]
             ];
 
             grid2d.innerHTML = pcPairs.map(([a, b], i) => `
@@ -1515,7 +1585,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         latent_ids: Array.from(state.cluster),
-                        n_components: 13,
+                        n_components: 9,
                         max_points: 50000,
                         experiment_id: state.currentExperiment?.id,
                     }),
@@ -1529,12 +1599,12 @@
                 state.pcaData = data;
 
                 const varExplained = data.explained_variance_ratio
-                    .slice(0, 6)
+                    .slice(0, 8)
                     .reduce((a, b) => a + b, 0) * 100;
 
                 document.getElementById('cloud-stats').textContent =
                     `${data.n_points.toLocaleString()} points | ` +
-                    `Var: ${varExplained.toFixed(1)}% (PC1-6)` +
+                    `Var: ${varExplained.toFixed(1)}% (PC1-8)` +
                     (data.subsampled ? ' | subsampled' : '');
 
                 renderScatterPlots(data);
@@ -1554,11 +1624,10 @@
 
             const pcPairs = [
                 [1,2], [2,3], [3,4], [4,5],
-                [5,6], [6,7], [7,8], [8,9],
-                [9,10], [10,11], [11,12], [12,13]
+                [5,6], [6,7], [7,8], [8,9]
             ];
 
-            for (let i = 0; i < 12; i++) {
+            for (let i = 0; i < 8; i++) {
                 const el = document.getElementById(`scatter-2d-${i}`);
                 if (el) {
                     el.innerHTML = `<div class="scatter-placeholder">PC${pcPairs[i][0]} vs PC${pcPairs[i][1]}</div>`;
@@ -1589,6 +1658,22 @@
                 pcs.push(points.map(p => p[i]));
             }
 
+            // Hover text from backend (may be null)
+            const hoverTexts = data.hover_texts || null;
+
+            // Subsample for 2D plots (SVG scatter can't handle 50k points,
+            // and small plot cells don't benefit from that many anyway)
+            const MAX_2D_POINTS = 10000;
+            let pcs2d = pcs;
+            let hoverTexts2d = hoverTexts;
+            if (points.length > MAX_2D_POINTS) {
+                const step = Math.ceil(points.length / MAX_2D_POINTS);
+                pcs2d = pcs.map(col => col.filter((_, j) => j % step === 0));
+                if (hoverTexts) {
+                    hoverTexts2d = hoverTexts.filter((_, j) => j % step === 0);
+                }
+            }
+
             // White theme layout
             const layoutBase = {
                 paper_bgcolor: 'rgba(255,255,255,0)',
@@ -1607,11 +1692,10 @@
                 },
             };
 
-            // 2D plots
+            // 2D plots (sliding window pairs, PCs 1-9)
             const pcPairs = [
                 [0,1], [1,2], [2,3], [3,4],
-                [4,5], [5,6], [6,7], [7,8],
-                [8,9], [9,10], [10,11], [11,12]
+                [4,5], [5,6], [6,7], [7,8]
             ];
 
             pcPairs.forEach(([a, b], i) => {
@@ -1622,17 +1706,23 @@
                 el.innerHTML = '';
 
                 const trace = {
-                    x: pcs[a],
-                    y: pcs[b],
+                    x: pcs2d[a],
+                    y: pcs2d[b],
                     mode: 'markers',
-                    type: 'scattergl',
+                    type: 'scatter',
                     marker: { size: 2, color: '#ff4500', opacity: 0.5 },
+                    ...(hoverTexts2d ? { text: hoverTexts2d, hoverinfo: 'text' } : { hoverinfo: 'x+y' }),
                 };
 
                 const layout = {
                     ...layoutBase,
                     xaxis: { ...layoutBase.xaxis, title: { text: `PC${a+1}`, font: { size: 9, color: '#999' } } },
                     yaxis: { ...layoutBase.yaxis, title: { text: `PC${b+1}`, font: { size: 9, color: '#999' } } },
+                    hoverlabel: {
+                        bgcolor: '#333',
+                        font: { family: 'monospace', size: 12, color: 'white' },
+                        align: 'left',
+                    },
                 };
 
                 Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
@@ -1659,6 +1749,7 @@
                     mode: 'markers',
                     type: 'scatter3d',
                     marker: { size: 2, color: '#ff4500', opacity: 0.5 },
+                    ...(hoverTexts ? { text: hoverTexts, hoverinfo: 'text' } : { hoverinfo: 'x+y+z' }),
                 };
 
                 const layout = {
@@ -1669,6 +1760,11 @@
                         xaxis: { title: config.label[0], gridcolor: '#e8e8e8', tickfont: { size: 8, color: '#aaa' } },
                         yaxis: { title: config.label[1], gridcolor: '#e8e8e8', tickfont: { size: 8, color: '#aaa' } },
                         zaxis: { title: config.label[2], gridcolor: '#e8e8e8', tickfont: { size: 8, color: '#aaa' } },
+                    },
+                    hoverlabel: {
+                        bgcolor: '#333',
+                        font: { family: 'monospace', size: 12, color: 'white' },
+                        align: 'left',
                     },
                 };
 
@@ -1701,6 +1797,8 @@
         // Keyboard Shortcuts
         // ============================================================
         document.addEventListener('keydown', (e) => {
+            const searchOpen = document.getElementById('search-results').style.display === 'block';
+
             // Handle search input
             if (e.target.id === 'search-input') {
                 if (e.key === 'Escape') {
@@ -1708,6 +1806,22 @@
                     e.target.value = '';
                     e.target.blur();
                     e.preventDefault();
+                    return;
+                }
+                if (e.key === 'ArrowDown' && searchOpen) {
+                    e.preventDefault();
+                    highlightSearchResult(state.searchHighlightIndex + 1);
+                    return;
+                }
+                if (e.key === 'ArrowUp' && searchOpen) {
+                    e.preventDefault();
+                    highlightSearchResult(state.searchHighlightIndex - 1);
+                    return;
+                }
+                if (e.key === 'Enter' && searchOpen && state.searchHighlightIndex >= 0) {
+                    e.preventDefault();
+                    selectHighlightedResult();
+                    return;
                 }
                 return;
             }
@@ -1727,6 +1841,28 @@
                 case 'Escape':
                     closeSearch();
                     break;
+                case 'p':
+                    // Pin currently previewed latent
+                    if (state.previewLatentId !== null && !state.pinnedLatents.includes(state.previewLatentId)) {
+                        pinLatent(state.previewLatentId);
+                    }
+                    break;
+                case '1': case '2': case '3': case '4': case '5':
+                case '6': case '7': case '8': case '9': {
+                    // Preview pinned card by number
+                    const idx = parseInt(e.key) - 1;
+                    if (idx < state.pinnedLatents.length) {
+                        const latentId = state.pinnedLatents[idx];
+                        previewLatent(latentId);
+                        // Flash the card briefly
+                        const card = document.getElementById(`pinned-card-${latentId}`);
+                        if (card) {
+                            card.classList.add('flash');
+                            setTimeout(() => card.classList.remove('flash'), 300);
+                        }
+                    }
+                    break;
+                }
             }
         });
 

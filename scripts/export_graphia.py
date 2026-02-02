@@ -205,16 +205,15 @@ def export_graphml(
     for nid in sorted(node_ids):
         node_el = ET.SubElement(graph, "node", id=str(nid))
         d = ET.SubElement(node_el, "data", key="label")
-        d.text = labels.get(nid, f"L{nid}")
+        d.text = f"L{nid}"
         d = ET.SubElement(node_el, "data", key="latent_id")
         d.text = str(nid)
 
-        if label_data and str(nid) in label_data:
-            entry = label_data[str(nid)]
-            d = ET.SubElement(node_el, "data", key="token")
-            d.text = _sanitize_xml(entry.get("token", "") or "")
-            d = ET.SubElement(node_el, "data", key="total_firings")
-            d.text = str(entry.get("total_firings", 0))
+        entry = (label_data or {}).get(str(nid), {})
+        d = ET.SubElement(node_el, "data", key="token")
+        d.text = _sanitize_xml(entry.get("token", "") or "")
+        d = ET.SubElement(node_el, "data", key="total_firings")
+        d.text = str(entry.get("total_firings", 0))
 
     # Add edges
     for i, (src, tgt, weight) in enumerate(edge_list):

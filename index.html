@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feature Manifold Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+            background: #fafafa;
+            color: #1a1a1a;
+            font-size: 13px;
+            line-height: 1.5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 60px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 13px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 24px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.15s;
+        }
+
+        .card:hover {
+            border-color: #ff4500;
+            box-shadow: 0 2px 12px rgba(255, 69, 0, 0.1);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-tag {
+            background: #ff4500;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .card-description {
+            color: #666;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .card-features {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .card-features ul {
+            list-style: none;
+            font-size: 11px;
+            color: #888;
+        }
+
+        .card-features li {
+            padding: 3px 0;
+        }
+
+        .card-features li::before {
+            content: "\2192";
+            margin-right: 8px;
+            color: #ff4500;
+        }
+
+        .footer {
+            margin-top: 48px;
+            text-align: center;
+            color: #999;
+            font-size: 11px;
+        }
+
+        .footer a {
+            color: #ff4500;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Feature Manifold Interface</h1>
+            <p class="subtitle">Explore LLM feature geometry from Sparse Autoencoders</p>
+        </div>
+
+        <div class="cards">
+            <a href="visualizer/index.html" class="card">
+                <div class="card-title">
+                    Latent Browser
+                    <span class="card-tag">Browse</span>
+                </div>
+                <p class="card-description">
+                    View max-activating examples for individual SAE latents.
+                    Navigate through latents to see which tokens activate each feature.
+                </p>
+                <div class="card-features">
+                    <ul>
+                        <li>Arrow key navigation</li>
+                        <li>Activation histogram</li>
+                        <li>Token highlighting by strength</li>
+                    </ul>
+                </div>
+            </a>
+
+            <a href="visualizer/umap.html" class="card">
+                <div class="card-title">
+                    UMAP Explorer
+                    <span class="card-tag">2D Map</span>
+                </div>
+                <p class="card-description">
+                    Click latents on a 2D UMAP projection to browse their examples.
+                    Discover clusters of related features.
+                </p>
+                <div class="card-features">
+                    <ul>
+                        <li>Pan and zoom navigation</li>
+                        <li>Click to select latent</li>
+                        <li>Semantic clustering visible</li>
+                    </ul>
+                </div>
+            </a>
+
+            <a href="visualizer/graph.html" class="card">
+                <div class="card-title">
+                    Graph Visualizer
+                    <span class="card-tag">Network</span>
+                </div>
+                <p class="card-description">
+                    Force-directed graph of latent relationships with interactive
+                    point cloud visualization of activation reconstructions.
+                </p>
+                <div class="card-features">
+                    <ul>
+                        <li>Build clusters by clicking</li>
+                        <li>PCA projection of reconstructions</li>
+                        <li>Edge weight controls</li>
+                    </ul>
+                </div>
+            </a>
+
+            <a href="visualizer/cluster.html" class="card">
+                <div class="card-title">
+                    Cluster Explorer
+                    <span class="card-tag">Analysis</span>
+                </div>
+                <p class="card-description">
+                    Deep dive into feature clusters. Build and analyze groups of
+                    related latents with detailed statistics.
+                </p>
+                <div class="card-features">
+                    <ul>
+                        <li>Search latents by label</li>
+                        <li>Cluster management</li>
+                        <li>Point cloud visualization</li>
+                    </ul>
+                </div>
+            </a>
+        </div>
+
+        <div class="footer">
+            <p>Inspired by Engels et al. (2024) &mdash;
+            <a href="https://arxiv.org/abs/2405.14860" target="_blank">Not All Language Model Features Are Linear</a></p>
+        </div>
+    </div>
+</body>
+</html>

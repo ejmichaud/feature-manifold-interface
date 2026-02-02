@@ -94,6 +94,7 @@ class PCAResponse(BaseModel):
     subsampled: bool
     cluster_latents: list[int]
     experiment_id: str | None = None
+    hover_texts: list[str] | None = None  # Token context for hover tooltips
 
 
 # Endpoints
@@ -246,6 +247,12 @@ async def compute_pca(
         max_points=request_body.max_points,
     )
 
+    # Build hover texts from token indices
+    hover_texts = None
+    token_indices = result.get("token_indices", [])
+    if token_indices:
+        hover_texts = data_loader.build_hover_texts(token_indices)
+
     return PCAResponse(
         n_points=len(result["points"]),
         n_components=result["points"].shape[1] if len(result["points"]) > 0 else 0,
@@ -254,6 +261,7 @@ async def compute_pca(
         subsampled=result["subsampled"],
         cluster_latents=list(cloud.cluster_latents),
         experiment_id=experiment_id,
+        hover_texts=hover_texts,
     )
 
 
