@@ -2,7 +2,7 @@
 data/
 visualizer/data/
 
-# Notebooks (exploratory)
+# Notebooks (exploratory, ignore contents but allow specific files via git add -f)
 notebooks/
 
 # Python
