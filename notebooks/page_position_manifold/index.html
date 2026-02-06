@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page Position Manifold Explorer</title>
+    <script src="plotly.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+            background: #f5f5f7;
+            color: #222;
+            font-size: 12px;
+            line-height: 1.4;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 8px 16px;
+            background: #fff;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .header-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2563eb;
+        }
+
+        .model-select {
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
+            color: #222;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .model-select:hover {
+            border-color: #2563eb;
+        }
+
+        .layer-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .layer-btn {
+            padding: 4px 10px;
+            border: 1px solid #ccc;
+            background: #fff;
+            color: #222;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 11px;
+            transition: all 0.15s;
+        }
+
+        .layer-btn:hover {
+            border-color: #2563eb;
+            color: #2563eb;
+        }
+
+        .layer-info {
+            font-size: 13px;
+            font-weight: 600;
+            min-width: 120px;
+            text-align: center;
+        }
+
+        .layer-slider {
+            width: 200px;
+            height: 4px;
+            -webkit-appearance: none;
+            background: #ddd;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+
+        .layer-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #2563eb;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .header-stats {
+            font-size: 11px;
+            color: #666;
+            margin-left: auto;
+        }
+
+        /* Description bar */
+        .description {
+            padding: 6px 16px;
+            background: #f0f4ff;
+            border-bottom: 1px solid #dde4f0;
+            color: #555;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        /* Main content: 2x2 grid of 3D scatter plots */
+        .main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            gap: 4px;
+            padding: 8px;
+            overflow: hidden;
+        }
+
+        .scatter-cell {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scatter-cell .plotly-graph-div {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .scatter-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #aaa;
+            font-size: 11px;
+            text-align: center;
+        }
+
+        /* 2D color legend */
+        .color-legend {
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 10px 14px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .color-legend-title {
+            font-size: 10px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .color-legend-canvas-wrapper {
+            position: relative;
+        }
+
+        .color-legend canvas {
+            display: block;
+            border: 1px solid #e0e0e0;
+            border-radius: 2px;
+        }
+
+        .color-legend-label {
+            font-size: 9px;
+            color: #777;
+        }
+
+        .color-legend-axis-x {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+
+        .color-legend-axis-y {
+            position: absolute;
+            top: 0;
+            left: -36px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        /* Loading */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(245, 245, 247, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .loading-text {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ddd;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Help text */
+        .help {
+            position: fixed;
+            bottom: 8px;
+            left: 12px;
+            font-size: 10px;
+            color: #aaa;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f0f0f0;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <span class="header-title">Page Position Manifold</span>
+            <select class="model-select" id="model-select">
+                <option value="">Loading...</option>
+            </select>
+            <div class="layer-nav">
+                <button class="layer-btn" id="btn-prev">&#9664;</button>
+                <span class="layer-info" id="layer-info">Layer 0 / 0</span>
+                <button class="layer-btn" id="btn-next">&#9654;</button>
+                <input type="range" class="layer-slider" id="layer-slider" min="0" max="0" value="0">
+            </div>
+            <span class="header-stats" id="header-stats"></span>
+        </header>
+
+        <div class="description">
+            Each point is the mean residual-stream activation for tokens at a specific position on the
+            &ldquo;page&rdquo; &mdash; a (line #, # of characters into the line) tuple. We average these
+            activations across a corpus of 5000 book passages which have linebreaks every 150 characters.
+            We project mean activations into PCA space. Color encodes position: hue encodes horizontal
+            position (blue at left margin, red at right), lightness encodes line number (light = early
+            lines, dark = later lines).
+        </div>
+
+        <main class="main" id="scatter-grid">
+            <div class="scatter-cell" id="scatter-0">
+                <div class="scatter-placeholder">PCs 1-2-3 (3D)</div>
+            </div>
+            <div class="scatter-cell" id="scatter-1">
+                <div class="scatter-placeholder">PCs 2-3-4 (3D)</div>
+            </div>
+            <div class="scatter-cell" id="scatter-2">
+                <div class="scatter-placeholder">PCs 3-4-5 (3D)</div>
+            </div>
+            <div class="scatter-cell" id="scatter-3">
+                <div class="scatter-placeholder">PCs 4-5-6 (3D)</div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 2D color legend -->
+    <div class="color-legend" id="color-legend" style="display: none;">
+        <span class="color-legend-title">Position on the page</span>
+        <div class="color-legend-canvas-wrapper">
+            <div class="color-legend-axis-y" id="legend-axis-y">
+                <span class="color-legend-label" id="legend-y-max"></span>
+                <span class="color-legend-label" style="font-weight: 600; color: #555;">Line</span>
+                <span class="color-legend-label" id="legend-y-min"></span>
+            </div>
+            <canvas id="legend-canvas" width="180" height="100"></canvas>
+        </div>
+        <div class="color-legend-axis-x">
+            <span class="color-legend-label" id="legend-x-min"></span>
+            <span class="color-legend-label" style="font-weight: 600; color: #555;">Position in line</span>
+            <span class="color-legend-label" id="legend-x-max"></span>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loading-overlay">
+        <span class="loading-text"><span class="spinner"></span> Loading manifest...</span>
+    </div>
+
+    <div class="help">Arrow keys: prev/next layer</div>
+
+    <script>
+        // ============================================================
+        // State
+        // ============================================================
+        const state = {
+            manifest: null,
+            currentModel: null,
+            currentLayer: 0,
+            layerData: {},       // layer_idx -> {line_numbers, widths, pca_projections, explained_variance_ratio}
+            loadingModel: false,
+        };
+
+        // ============================================================
+        // 2D Colormap: Hue (width) + Lightness (line number)
+        // ============================================================
+        function computeColors(lineNumbers, widths) {
+            const minW = Math.min(...widths), maxW = Math.max(...widths);
+            const minLn = Math.min(...lineNumbers), maxLn = Math.max(...lineNumbers);
+            return widths.map((w, i) => {
+                const hue = 240 * (1 - (w - minW) / (maxW - minW || 1));
+                const lightness = 85 - 60 * ((lineNumbers[i] - minLn) / (maxLn - minLn || 1));
+                return `hsl(${hue.toFixed(0)}, 80%, ${lightness.toFixed(0)}%)`;
+            });
+        }
+
+        function drawColorLegend(lineNumbers, widths) {
+            const canvas = document.getElementById('legend-canvas');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+
+            const minW = Math.min(...widths), maxW = Math.max(...widths);
+            const minLn = Math.min(...lineNumbers), maxLn = Math.max(...lineNumbers);
+
+            for (let px = 0; px < w; px++) {
+                for (let py = 0; py < h; py++) {
+                    const wFrac = px / (w - 1);   // 0=left (min width) to 1=right (max width)
+                    const lnFrac = py / (h - 1);  // 0=top (min line) to 1=bottom (max line)
+                    const hue = 240 * (1 - wFrac);
+                    const lightness = 85 - 60 * lnFrac;
+                    ctx.fillStyle = `hsl(${hue}, 80%, ${lightness}%)`;
+                    ctx.fillRect(px, py, 1, 1);
+                }
+            }
+
+            document.getElementById('legend-x-min').textContent = `${minW}`;
+            document.getElementById('legend-x-max').textContent = `${maxW}`;
+            document.getElementById('legend-y-min').textContent = `L${minLn}`;
+            document.getElementById('legend-y-max').textContent = `L${maxLn}`;
+
+            document.getElementById('color-legend').style.display = 'flex';
+        }
+
+        // ============================================================
+        // Initialization
+        // ============================================================
+        async function init() {
+            setupEventListeners();
+            await loadManifest();
+        }
+
+        function setupEventListeners() {
+            document.getElementById('model-select').addEventListener('change', (e) => {
+                if (e.target.value) switchModel(e.target.value);
+            });
+
+            document.getElementById('btn-prev').addEventListener('click', () => changeLayer(-1));
+            document.getElementById('btn-next').addEventListener('click', () => changeLayer(1));
+
+            document.getElementById('layer-slider').addEventListener('input', (e) => {
+                state.currentLayer = parseInt(e.target.value);
+                renderCurrentLayer();
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+                if (e.key === 'ArrowLeft') { e.preventDefault(); changeLayer(-1); }
+                if (e.key === 'ArrowRight') { e.preventDefault(); changeLayer(1); }
+            });
+        }
+
+        // ============================================================
+        // Data Loading
+        // ============================================================
+        async function loadManifest() {
+            showLoading('Loading manifest...');
+            try {
+                const resp = await fetch('./manifest.json');
+                if (!resp.ok) throw new Error('manifest.json not found');
+                state.manifest = await resp.json();
+
+                const select = document.getElementById('model-select');
+                select.innerHTML = state.manifest.models.map(m =>
+                    `<option value="${m.model_key}">${m.model_key} (${m.n_layers}L, d=${m.d_model})</option>`
+                ).join('');
+
+                // Load default model (prefer gemma-2-27b if available)
+                if (state.manifest.models.length > 0) {
+                    const preferred = state.manifest.models.find(m => m.model_key === 'gemma-2-9b');
+                    const defaultKey = preferred ? preferred.model_key : state.manifest.models[0].model_key;
+                    select.value = defaultKey;
+                    await switchModel(defaultKey);
+                }
+            } catch (error) {
+                showLoading(`Error: ${error.message}`);
+            }
+        }
+
+        async function switchModel(modelKey) {
+            if (state.loadingModel) return;
+            state.loadingModel = true;
+
+            const modelInfo = state.manifest.models.find(m => m.model_key === modelKey);
+            if (!modelInfo) return;
+
+            state.currentModel = modelInfo;
+            state.layerData = {};
+            state.currentLayer = Math.min(12, modelInfo.n_layers - 1);
+
+            // Update slider
+            const slider = document.getElementById('layer-slider');
+            slider.max = modelInfo.n_layers - 1;
+            slider.value = state.currentLayer;
+
+            showLoading(`Loading ${modelKey} (${modelInfo.n_layers} layers)...`);
+
+            // Fetch all layer files in parallel
+            const dirName = modelInfo.hf_name.replace('/', '--');
+            const promises = [];
+            for (let i = 0; i < modelInfo.n_layers; i++) {
+                const layerFile = `./${dirName}/layer_${String(i).padStart(2, '0')}.json`;
+                promises.push(
+                    fetch(layerFile)
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => { if (data) state.layerData[i] = data; })
+                        .catch(() => {})
+                );
+            }
+            await Promise.all(promises);
+
+            const loadedCount = Object.keys(state.layerData).length;
+            console.log(`Loaded ${loadedCount}/${modelInfo.n_layers} layers for ${modelKey}`);
+
+            state.loadingModel = false;
+            hideLoading();
+            renderCurrentLayer();
+        }
+
+        // ============================================================
+        // Layer Navigation
+        // ============================================================
+        function changeLayer(delta) {
+            if (!state.currentModel) return;
+            const newLayer = state.currentLayer + delta;
+            if (newLayer < 0 || newLayer >= state.currentModel.n_layers) return;
+            state.currentLayer = newLayer;
+            document.getElementById('layer-slider').value = newLayer;
+            renderCurrentLayer();
+        }
+
+        // ============================================================
+        // Rendering
+        // ============================================================
+        function renderCurrentLayer() {
+            if (!state.currentModel) return;
+
+            const data = state.layerData[state.currentLayer];
+            const nLayers = state.currentModel.n_layers;
+
+            // Update layer info
+            document.getElementById('layer-info').textContent =
+                `Layer ${state.currentLayer} / ${nLayers - 1}`;
+
+            if (!data) {
+                document.getElementById('header-stats').textContent = 'No data for this layer';
+                clearPlots();
+                return;
+            }
+
+            // Update stats
+            const varSum = data.explained_variance_ratio.slice(0, 6).reduce((a, b) => a + b, 0);
+            const varPc1 = data.explained_variance_ratio[0];
+            document.getElementById('header-stats').textContent =
+                `${data.widths.length} grid cells | PC1: ${(varPc1 * 100).toFixed(1)}% | PC1-6: ${(varSum * 100).toFixed(1)}%`;
+
+            renderPlots(data);
+        }
+
+        function clearPlots() {
+            const labels = ['PCs 1-2-3', 'PCs 2-3-4', 'PCs 3-4-5', 'PCs 4-5-6'];
+            for (let i = 0; i < 4; i++) {
+                const el = document.getElementById(`scatter-${i}`);
+                if (el) el.innerHTML = `<div class="scatter-placeholder">${labels[i]} (3D)</div>`;
+            }
+        }
+
+        function renderPlots(data) {
+            const lineNumbers = data.line_numbers;
+            const widths = data.widths;
+            const projections = data.pca_projections;
+            const nComp = projections[0].length;
+
+            // Extract PC columns
+            const pcs = [];
+            for (let i = 0; i < nComp; i++) {
+                pcs.push(projections.map(p => p[i]));
+            }
+
+            // Compute 2D colors (hue=width, lightness=line number)
+            const colors = computeColors(lineNumbers, widths);
+            const hoverTexts = widths.map((w, i) => `Line ${lineNumbers[i]}, column ${w}`);
+
+            // Draw color legend
+            drawColorLegend(lineNumbers, widths);
+
+            // 2x2 grid: PCs 1-3, PCs 2-4, PCs 3-5, PCs 4-6
+            const configs = [
+                { pcs: [0, 1, 2], labels: ['PC1', 'PC2', 'PC3'] },
+                { pcs: [1, 2, 3], labels: ['PC2', 'PC3', 'PC4'] },
+                { pcs: [2, 3, 4], labels: ['PC3', 'PC4', 'PC5'] },
+                { pcs: [3, 4, 5], labels: ['PC4', 'PC5', 'PC6'] },
+            ];
+
+            configs.forEach((cfg, i) => {
+                const [a, b, c] = cfg.pcs;
+                if (a >= nComp || b >= nComp || c >= nComp) {
+                    const el = document.getElementById(`scatter-${i}`);
+                    if (el) el.innerHTML = `<div class="scatter-placeholder">Not enough PCs</div>`;
+                    return;
+                }
+
+                const el = document.getElementById(`scatter-${i}`);
+                if (!el) return;
+                el.innerHTML = '';
+
+                const trace = {
+                    x: pcs[a],
+                    y: pcs[b],
+                    z: pcs[c],
+                    mode: 'markers',
+                    type: 'scatter3d',
+                    marker: {
+                        size: 3,
+                        color: colors,
+                    },
+                    text: hoverTexts,
+                    hoverinfo: 'text',
+                };
+
+                const layout = {
+                    paper_bgcolor: 'rgba(255,255,255,0)',
+                    margin: { l: 0, r: 0, t: 0, b: 0 },
+                    scene: {
+                        bgcolor: 'rgba(255,255,255,1)',
+                        xaxis: {
+                            title: cfg.labels[0],
+                            gridcolor: '#eee',
+                            tickfont: { size: 8, color: '#777' },
+                            titlefont: { size: 10, color: '#555' },
+                        },
+                        yaxis: {
+                            title: cfg.labels[1],
+                            gridcolor: '#eee',
+                            tickfont: { size: 8, color: '#777' },
+                            titlefont: { size: 10, color: '#555' },
+                        },
+                        zaxis: {
+                            title: cfg.labels[2],
+                            gridcolor: '#eee',
+                            tickfont: { size: 8, color: '#777' },
+                            titlefont: { size: 10, color: '#555' },
+                        },
+                    },
+                    showlegend: false,
+                };
+
+                Plotly.newPlot(el, [trace], layout, {
+                    responsive: true,
+                    displayModeBar: false,
+                });
+            });
+        }
+
+        // ============================================================
+        // Loading Overlay
+        // ============================================================
+        function showLoading(msg) {
+            const overlay = document.getElementById('loading-overlay');
+            overlay.querySelector('.loading-text').innerHTML =
+                `<span class="spinner"></span> ${msg}`;
+            overlay.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+
+        // ============================================================
+        // Start
+        // ============================================================
+        init();
+    </script>
+</body>
+</html>
